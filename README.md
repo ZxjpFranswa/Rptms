@@ -1,4 +1,4 @@
-# Municipal Property Registration & Record Management System (RPTMS)
+# Real Property Tax Management System (RPTMS)
 
 ## Project Description
 This system is designed to manage property records within a municipality. It streamlines the process of property,
