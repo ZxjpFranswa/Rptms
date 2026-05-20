@@ -1,3 +1,6 @@
+# Local git backup (do not commit)
+.git-iso/
+
 # Logs
 logs
 *.log
