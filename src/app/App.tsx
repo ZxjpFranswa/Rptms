@@ -16,6 +16,12 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [userName, setUserName] = useState("");
   const [currentPage, setCurrentPage] = useState("dashboard");
+  const [soaPrefillApprovalId, setSoaPrefillApprovalId] = useState<string | null>(null);
+
+  const handleOpenSOAFromApproval = (approvalId: string) => {
+    setSoaPrefillApprovalId(approvalId);
+    setCurrentPage("soa");
+  };
 
   const handleLogin = (role: UserRole, name: string) => {
     setUserRole(role);
@@ -44,9 +50,23 @@ export default function App() {
 
       // Revenue Clerk pages
       case "soa":
-        return userRole === "clerk" ? <ClerkSOA /> : <Dashboard />;
+        return userRole === "clerk" ? (
+          <ClerkSOA
+            prefillApprovalId={soaPrefillApprovalId}
+            onPrefillConsumed={() => setSoaPrefillApprovalId(null)}
+          />
+        ) : (
+          <Dashboard />
+        );
       case "approvals-status":
-        return userRole === "clerk" ? <ClerkApprovalNotifications /> : <Dashboard />;
+        return userRole === "clerk" ? (
+          <ClerkApprovalNotifications
+            onOpenGenerateSOA={handleOpenSOAFromApproval}
+            isActive={currentPage === "approvals-status"}
+          />
+        ) : (
+          <Dashboard />
+        );
 
       // Treasurer pages
       case "approvals":

@@ -20,44 +20,47 @@ export default function CashierPayment() {
 
   // Load SOAs from the shared system
   useEffect(() => {
-    // Get all SOAs that have been sent to taxpayers
-    const soas = getSentSOAs();
-    setAvailableSOAs(soas);
+    const load = async () => {
+      const soas = await getSentSOAs();
+      setAvailableSOAs(soas);
+    };
+    load();
 
-    // Subscribe to real-time updates
     const unsubscribe = subscribeToSOAUpdates(() => {
-      const updated = getSentSOAs();
-      setAvailableSOAs(updated);
+      load();
     });
 
     return unsubscribe;
   }, []);
 
 
+  const selectSOA = (soa: SOARecord) => {
+    setSearchPIN(soa.pin);
+    setSelectedBilling(soa);
+    setPaymentAmount(soa.balanceDue.toString());
+    setDiscountType("none");
+    setDiscountAmount(0);
+    setDiscountError("");
+  };
+
   const handleSearch = () => {
-    const found = availableSOAs.find(soa => soa.pin === searchPIN && soa.status !== "Paid");
+    const query = searchPIN.trim().toLowerCase();
+    const found = availableSOAs.find(
+      soa =>
+        soa.status !== "Paid" &&
+        (soa.pin.toLowerCase() === query ||
+          soa.taxpayer.toLowerCase().includes(query))
+    );
     if (found) {
-      setSelectedBilling(found);
-      setPaymentAmount(found.totalDue.toString());
-      setDiscountType("none");
-      setDiscountAmount(0);
-      setDiscountError("");
+      selectSOA(found);
     } else {
       alert("Property ID not found or SOA not available. Please check if the Revenue Clerk has sent the SOA.");
       setSelectedBilling(null);
     }
   };
 
-  const handleSelectTaxpayer = (pin: string) => {
-    setSearchPIN(pin);
-    const found = availableSOAs.find(soa => soa.pin === pin && soa.status !== "Paid");
-    if (found) {
-      setSelectedBilling(found);
-      setPaymentAmount(found.totalDue.toString());
-      setDiscountType("none");
-      setDiscountAmount(0);
-      setDiscountError("");
-    }
+  const handleSelectSOA = (soa: SOARecord) => {
+    selectSOA(soa);
   };
 
   const handleDiscountChange = (type: "none" | "10" | "20") => {
@@ -76,18 +79,20 @@ export default function CashierPayment() {
 
     if (type === "none") {
       setDiscountAmount(0);
-      setPaymentAmount(selectedBilling.totalDue.toString());
+      setPaymentAmount(selectedBilling.balanceDue.toString());
     } else {
+
       const baseAmount = selectedBilling.basicRPT + selectedBilling.sef;
       const discountPercentage = parseInt(type);
       const calculatedDiscount = baseAmount * (discountPercentage / 100);
       setDiscountAmount(calculatedDiscount);
-      const newTotal = selectedBilling.totalDue - calculatedDiscount;
+      const newTotal = Math.max(0, selectedBilling.balanceDue - calculatedDiscount);
       setPaymentAmount(newTotal.toString());
+
     }
   };
 
-  const handleProcessPayment = () => {
+  const handleProcessPayment = async () => {
     if (!selectedBilling) return;
 
     const amount = parseFloat(paymentAmount);
@@ -96,28 +101,24 @@ export default function CashierPayment() {
       return;
     }
 
-    // Update SOA status in the shared system
-    const finalTotalDue = selectedBilling.totalDue - discountAmount;
-    const paymentStatus: "Paid" | "Partial" = amount >= finalTotalDue ? "Paid" : "Partial";
+    const newORNumber = `OR-2026-${String(Math.floor(Math.random() * 999999)).padStart(6, "0")}`;
 
-    updateSOAStatus(selectedBilling.id, paymentStatus, discountAmount);
-
-    console.log("Payment processed:", {
-      soaId: selectedBilling.id,
-      pin: selectedBilling.pin,
-      taxpayer: selectedBilling.taxpayer,
-      amountPaid: amount,
-      discountApplied: discountAmount,
-      status: paymentStatus,
+    await updateSOAStatus(selectedBilling.id, amount, discountAmount, {
+      orNumber: newORNumber,
+      paymentMethod: "Cash",
+      cashier: "Maria Santos (Cashier)",
     });
 
-    const newORNumber = `OR-2026-${String(Math.floor(Math.random() * 999999)).padStart(6, '0')}`;
     setOrNumber(newORNumber);
     setShowReceipt(true);
   };
 
-  const handlePrintReceipt = () => {
-    window.print();
+const handlePrintReceipt = () => {
+    // Ensure print-only DOM is applied before opening the print dialog.
+    // This avoids cases where some users see the full UI instead of the receipt.
+    setTimeout(() => {
+      window.print();
+    }, 50);
   };
 
   const resetForm = () => {
@@ -131,10 +132,10 @@ export default function CashierPayment() {
     setDiscountError("");
   };
 
-  if (showReceipt && selectedBilling) {
+if (showReceipt && selectedBilling) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white border border-[#e5e7eb] rounded-[8px] shadow-[0px_1px_2px_0px_rgba(0,0,0,0.1)] p-8">
+      <div className="max-w-4xl mx-auto bb-print-root">
+        <div className="bg-white border border-[#e5e7eb] rounded-[8px] shadow-[0px_1px_2px_0px_rgba(0,0,0,0.1)] p-8 bb-print-surface">
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
               <CheckCircle className="w-16 h-16 text-[#059467]" />
@@ -253,17 +254,21 @@ export default function CashierPayment() {
           </div>
 
           <div className="flex gap-4">
-            <button
-              onClick={handlePrintReceipt}
-              className="flex-1 bg-[#059467] text-white py-3 px-6 rounded-lg font-['Poppins'] font-medium text-[16px] hover:bg-[#048358] transition-colors flex items-center justify-center gap-2"
-            >
+              <button
+                type="button"
+                onClick={handlePrintReceipt}
+                aria-label="Print receipt"
+                className="flex-1 bg-[#059467] text-white py-3 px-6 rounded-lg font-['Poppins'] font-medium text-[16px] hover:bg-[#048358] transition-colors flex items-center justify-center gap-2"
+              >
               <Printer className="w-5 h-5" />
               Print Receipt
             </button>
-            <button
-              onClick={resetForm}
-              className="flex-1 bg-white border border-gray-300 text-gray-700 py-3 px-6 rounded-lg font-['Poppins'] font-medium text-[16px] hover:bg-gray-50 transition-colors"
-            >
+              <button
+                type="button"
+                onClick={resetForm}
+                aria-label="Start new transaction"
+                className="flex-1 bg-white border border-gray-300 text-gray-700 py-3 px-6 rounded-lg font-['Poppins'] font-medium text-[16px] hover:bg-gray-50 transition-colors"
+              >
               New Transaction
             </button>
           </div>
@@ -330,7 +335,7 @@ export default function CashierPayment() {
         <div className="bg-white border border-[#e5e7eb] rounded-[8px] shadow-[0px_1px_2px_0px_rgba(0,0,0,0.1)] overflow-hidden">
           <div className="p-4 border-b border-gray-200 bg-gray-50">
             <h3 className="font-['Poppins'] font-semibold text-[16px] text-gray-900">
-              All Taxpayers ({filteredTaxpayers.length})
+              Bills Ready for Payment ({filteredTaxpayers.length})
             </h3>
           </div>
           <div className="max-h-[600px] overflow-y-auto">
@@ -340,7 +345,7 @@ export default function CashierPayment() {
                 className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
                   selectedBilling?.id === soa.id ? 'bg-[#059467]/10 border-l-4 border-l-[#059467]' : ''
                 }`}
-                onClick={() => handleSelectTaxpayer(soa.pin)}
+                onClick={() => handleSelectSOA(soa)}
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex-1">
@@ -372,7 +377,8 @@ export default function CashierPayment() {
                   {soa.propertyAddress}
                 </p>
                 <p className="font-['Poppins'] text-[14px] font-semibold text-[#059467]">
-                  ₱{soa.totalDue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                  ₱{soa.balanceDue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+
                 </p>
                 {soa.approvalRequestId && (
                   <p className="font-['Poppins'] text-[10px] text-green-600 mt-1">
@@ -478,7 +484,8 @@ export default function CashierPayment() {
                 <div className="flex justify-between">
                   <span className="font-['Poppins'] font-bold text-[16px] text-gray-900">Total Amount Due</span>
                   <span className="font-['Poppins'] font-bold text-[18px] text-[#059467]">
-                    ₱{(selectedBilling.totalDue - discountAmount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                    ₱{(selectedBilling.balanceDue - discountAmount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+
                   </span>
                 </div>
               </div>
@@ -496,7 +503,9 @@ export default function CashierPayment() {
                   <label className="font-['Poppins'] text-[14px] text-gray-700 mb-2 block">
                     Early Payment Discount
                   </label>
+                  <label className="sr-only" id="discount-type-label">Early payment discount</label>
                   <select
+                    aria-labelledby="discount-type-label"
                     value={discountType}
                     onChange={(e) => handleDiscountChange(e.target.value as "none" | "10" | "20")}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg font-['Poppins'] text-[14px] focus:outline-none focus:ring-2 focus:ring-[#059467] focus:border-transparent"

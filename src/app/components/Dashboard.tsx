@@ -1,4 +1,6 @@
 import { TrendingUp, DollarSign, Users, AlertCircle, Target } from "lucide-react";
+import { useEffect, useState } from "react";
+import { getDashboardStats, getRecentPayments } from "../utils/payments";
 
 interface StatCardProps {
   title: string;
@@ -35,69 +37,59 @@ interface RecentPayment {
 }
 
 export default function Dashboard() {
+  const [statsData, setStatsData] = useState({
+    todayCollections: 0,
+    totalTaxpayers: 0,
+    pendingPayments: 0,
+    delinquentAccounts: 0,
+  });
+  const [recentPayments, setRecentPayments] = useState<RecentPayment[]>([]);
+
+  useEffect(() => {
+    getDashboardStats().then(setStatsData).catch(console.error);
+    getRecentPayments().then(payments =>
+      setRecentPayments(payments.map(p => ({
+        id: p.orNumber,
+        pin: p.pin,
+        taxpayer: p.taxpayer,
+        amount: p.amount,
+        date: p.paymentDate.slice(0, 10),
+        status: "Paid" as const,
+      })))
+    ).catch(console.error);
+  }, []);
+
+  const formatCurrency = (n: number) =>
+    `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+
   const stats = [
     {
       title: "Today's Collections",
-      value: "₱45,250.00",
-      subtitle: "+12% from yesterday",
+      value: formatCurrency(statsData.todayCollections),
+      subtitle: "From database",
       icon: <DollarSign className="w-6 h-6 text-white" />,
       color: "bg-[#059467]",
     },
     {
       title: "Total Taxpayers",
-      value: "1,247",
+      value: statsData.totalTaxpayers.toLocaleString(),
       subtitle: "Active accounts",
       icon: <Users className="w-6 h-6 text-white" />,
       color: "bg-blue-500",
     },
     {
       title: "Pending Payments",
-      value: "₱128,500.00",
-      subtitle: "Due this quarter",
+      value: formatCurrency(statsData.pendingPayments),
+      subtitle: "Outstanding SOA balances",
       icon: <TrendingUp className="w-6 h-6 text-white" />,
       color: "bg-amber-500",
     },
     {
       title: "Delinquent Accounts",
-      value: "23",
+      value: statsData.delinquentAccounts.toLocaleString(),
       subtitle: "Requires attention",
       icon: <AlertCircle className="w-6 h-6 text-white" />,
       color: "bg-red-500",
-    },
-  ];
-
-  const recentPayments: RecentPayment[] = [
-    {
-      id: "OR-2026-001234",
-      pin: "001-2024-0045",
-      taxpayer: "Juan Dela Cruz",
-      amount: 5250.00,
-      date: "2026-05-12",
-      status: "Paid",
-    },
-    {
-      id: "OR-2026-001233",
-      pin: "001-2024-0123",
-      taxpayer: "Maria Santos",
-      amount: 3800.00,
-      date: "2026-05-12",
-      status: "Paid",
-    },
-    {
-      id: "OR-2026-001232",
-      pin: "001-2024-0089",
-      taxpayer: "Pedro Reyes",
-      amount: 2100.00,
-      date: "2026-05-11",
-      status: "Partial",
-    },
-    {
-      id: "OR-2026-001231",
-      pin: "001-2024-0234",
-      taxpayer: "Ana Garcia",
-      amount: 6750.00,
-      date: "2026-05-11",
-      status: "Paid",
     },
   ];
 

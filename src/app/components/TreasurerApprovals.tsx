@@ -1,5 +1,16 @@
 import { useState, useEffect } from "react";
-import { CheckCircle, XCircle, AlertCircle, FileText } from "lucide-react";
+import { CheckCircle } from "lucide-react";
+
+// NOTE: Icons from lucide-react are intentionally limited here to avoid build issues
+// with mismatched lucide-react exports in this project.
+
+
+
+
+
+
+
+
 import {
   ApprovalRequest,
   getAllApprovalRequests,
@@ -19,49 +30,71 @@ export default function TreasurerApprovals() {
 
   // Load approval requests on mount and subscribe to updates
   useEffect(() => {
-    setRequests(getAllApprovalRequests());
+    let cancelled = false;
+
+    const load = async () => {
+      const data = await getAllApprovalRequests();
+      if (!cancelled) setRequests(data);
+    };
+
+    void load();
 
     // Subscribe to real-time updates
     const unsubscribe = subscribeToApprovalUpdates(() => {
-      setRequests(getAllApprovalRequests());
+      void load();
     });
 
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
-  const handleApprove = (requestId: string) => {
+
+  const handleApprove = async (requestId: string) => {
     if (!approvalNotes.trim()) {
       alert("Please provide approval notes");
       return;
     }
 
-    const updated = updateApprovalRequestStatus(requestId, "Approved", approvalNotes);
+    // Treasurer approves `proposedAmount`.
+    const req = requests.find(r => r.id === requestId);
+    const finalizedAmount = req?.proposedAmount;
+
+    const updated = await updateApprovalRequestStatus(
+      requestId,
+      "Approved",
+      approvalNotes,
+      finalizedAmount
+    );
 
     if (updated) {
       alert(`Request ${requestId} has been approved. The Revenue Clerk will be notified.`);
       setSelectedRequest(null);
       setApprovalNotes("");
     } else {
-      alert("Error: Could not find the request");
+      alert("Error: Could not update the request");
     }
   };
 
-  const handleReject = (requestId: string) => {
+
+  const handleReject = async (requestId: string) => {
     if (!approvalNotes.trim()) {
       alert("Please provide rejection reason");
       return;
     }
 
-    const updated = updateApprovalRequestStatus(requestId, "Rejected", approvalNotes);
+    const updated = await updateApprovalRequestStatus(requestId, "Rejected", approvalNotes);
 
     if (updated) {
       alert(`Request ${requestId} has been rejected. The Revenue Clerk will be notified.`);
       setSelectedRequest(null);
       setApprovalNotes("");
     } else {
-      alert("Error: Could not find the request");
+      alert("Error: Could not update the request");
     }
   };
+
 
   const pendingRequests = requests.filter(r => r.status === "Pending");
   const processedRequests = requests.filter(r => r.status !== "Pending");
@@ -95,7 +128,7 @@ export default function TreasurerApprovals() {
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <AlertCircle className="w-5 h-5 text-amber-500" />
+                    <span className="inline-block w-5 h-5" />
                     <h4 className="font-['Poppins'] font-semibold text-[16px] text-gray-900">
                       {request.requestType}
                     </h4>
@@ -257,7 +290,7 @@ export default function TreasurerApprovals() {
               <div className="space-y-4 mb-6">
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <FileText className="w-5 h-5 text-amber-600" />
+                    <span className="inline-block w-5 h-5" />
                     <h4 className="font-['Poppins'] font-semibold text-[16px] text-gray-900">
                       {selectedRequest.requestType}
                     </h4>
@@ -349,7 +382,7 @@ export default function TreasurerApprovals() {
                   onClick={() => handleReject(selectedRequest.id)}
                   className="flex-1 bg-red-600 text-white py-3 px-6 rounded-lg font-['Poppins'] font-medium text-[16px] hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
                 >
-                  <XCircle className="w-5 h-5" />
+                    <span className="inline-block w-5 h-5" />
                   Reject Request
                 </button>
               </div>

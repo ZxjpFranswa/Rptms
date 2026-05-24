@@ -1,5 +1,6 @@
-// Shared approval request management system
-// This simulates a shared database for approval requests between Revenue Clerk and Treasurer
+// Shared approval request management system (client-side)
+// IMPORTANT: This file must NOT import sqlite/better-sqlite3.
+// All persistence happens via the backend API.
 
 export interface ApprovalRequest {
   id: string;
@@ -14,94 +15,101 @@ export interface ApprovalRequest {
   status: "Pending" | "Approved" | "Rejected";
   treasurerNotes?: string;
   reviewDate?: string;
+
+  // Persist the exact payable amount after Treasurer decision.
+  // For Approved: equals proposedAmount
+  // For Rejected: equals currentAmount
+  finalizedAmount?: number;
 }
 
-// In-memory storage for approval requests (simulates a database)
-let approvalRequests: ApprovalRequest[] = [
-  {
-    id: "REQ-2026-0012",
-    pin: "001-2024-0089",
-    taxpayer: "Pedro Reyes",
-    requestType: "Penalty Waiver",
-    currentAmount: 450,
-    proposedAmount: 100,
-    reason: "Taxpayer was hospitalized during payment period, requesting partial penalty waiver",
-    requestedBy: "Ana Lopez (Revenue Clerk)",
-    requestDate: "2026-05-11T09:15:00",
-    status: "Approved",
-    treasurerNotes: "Approved - Medical documentation provided and verified. Penalty reduced from 450 to 100.",
-    reviewDate: "2026-05-12T14:30:00",
-  },
-  {
-    id: "REQ-2026-0015",
-    pin: "001-2024-0234",
-    taxpayer: "Ana Garcia",
-    requestType: "Tax Adjustment",
-    currentAmount: 6750,
-    proposedAmount: 6250,
-    reason: "Requesting special senior citizen discount",
-    requestedBy: "Ana Lopez (Revenue Clerk)",
-    requestDate: "2026-05-12T10:00:00",
-    status: "Rejected",
-    treasurerNotes: "Rejected - Senior citizen exemption should be processed through Property Appraisal Module, not as SOA adjustment. Please coordinate with Assessor's Office.",
-    reviewDate: "2026-05-12T15:45:00",
-  },
-  {
-    id: "REQ-2026-0018",
-    pin: "001-2024-0312",
-    taxpayer: "Carlos Mendoza",
-    requestType: "Penalty Waiver",
-    currentAmount: 200,
-    proposedAmount: 50,
-    reason: "Natural disaster affected area, requesting penalty reduction per municipal ordinance",
-    requestedBy: "Ana Lopez (Revenue Clerk)",
-    requestDate: "2026-05-12T11:20:00",
-    status: "Approved",
-    treasurerNotes: "Approved - Property is within declared calamity zone. Penalty reduction granted as per Ordinance 2026-08.",
-    reviewDate: "2026-05-12T16:10:00",
-  },
-];
-
-// Event listeners for real-time updates
 type ApprovalUpdateListener = () => void;
 const listeners: ApprovalUpdateListener[] = [];
+const APPROVAL_BC_CHANNEL = "magarao-approval-updates";
+
+function broadcastApprovalUpdate() {
+  if (typeof BroadcastChannel === "undefined") return;
+  try {
+    const channel = new BroadcastChannel(APPROVAL_BC_CHANNEL);
+    channel.postMessage({ type: "updated" });
+    channel.close();
+  } catch {
+    // BroadcastChannel unavailable in some environments
+  }
+}
 
 export function subscribeToApprovalUpdates(listener: ApprovalUpdateListener) {
   listeners.push(listener);
+
+  let bc: BroadcastChannel | undefined;
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      bc = new BroadcastChannel(APPROVAL_BC_CHANNEL);
+      bc.onmessage = () => listener();
+    } catch {
+      bc = undefined;
+    }
+  }
+
   return () => {
     const index = listeners.indexOf(listener);
     if (index > -1) {
       listeners.splice(index, 1);
     }
+    bc?.close();
   };
 }
 
 function notifyListeners() {
   listeners.forEach(listener => listener());
+  broadcastApprovalUpdate();
 }
 
-// Get all approval requests
-export function getAllApprovalRequests(): ApprovalRequest[] {
-  return [...approvalRequests];
+const API_BASE = ""; // same-origin
+
+async function apiFetch<T>(input: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${input}`, {
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`API ${input} failed: ${res.status} ${text}`);
+  }
+
+  return (await res.json()) as T;
 }
 
-// Get approval requests by status
-export function getApprovalRequestsByStatus(status: "Pending" | "Approved" | "Rejected"): ApprovalRequest[] {
-  return approvalRequests.filter(req => req.status === status);
+export async function getAllApprovalRequests(): Promise<ApprovalRequest[]> {
+  return apiFetch<ApprovalRequest[]>("/api/approval-requests");
 }
 
-// Get approval request by ID
-export function getApprovalRequestById(id: string): ApprovalRequest | undefined {
-  return approvalRequests.find(req => req.id === id);
+export async function getApprovalRequestsByStatus(
+  status: "Pending" | "Approved" | "Rejected"
+): Promise<ApprovalRequest[]> {
+  const all = await getAllApprovalRequests();
+  return all.filter(r => r.status === status);
 }
 
-// Get approval requests by PIN (for checking status of a specific taxpayer's SOA)
-export function getApprovalRequestsByPIN(pin: string): ApprovalRequest[] {
-  return approvalRequests.filter(req => req.pin === pin);
+export async function getApprovalRequestById(
+  id: string
+): Promise<ApprovalRequest | undefined> {
+  try {
+    return await apiFetch<ApprovalRequest>(
+      `/api/approval-requests/${encodeURIComponent(id)}`
+    );
+  } catch {
+    return undefined;
+  }
 }
 
-// Create a new approval request (used by Revenue Clerk)
-export function createApprovalRequest(
+export async function getApprovalRequestsByPIN(pin: string): Promise<ApprovalRequest[]> {
+  return apiFetch<ApprovalRequest[]>(
+    `/api/approval-requests/pin/${encodeURIComponent(pin)}`
+  );
+}
+
+export async function createApprovalRequest(
   pin: string,
   taxpayer: string,
   requestType: "Penalty Waiver" | "Tax Adjustment",
@@ -109,9 +117,9 @@ export function createApprovalRequest(
   proposedAmount: number,
   reason: string,
   requestedBy: string
-): ApprovalRequest {
+): Promise<ApprovalRequest> {
   const newRequest: ApprovalRequest = {
-    id: `REQ-2026-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`,
+    id: `REQ-2026-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`,
     pin,
     taxpayer,
     requestType,
@@ -123,36 +131,103 @@ export function createApprovalRequest(
     status: "Pending",
   };
 
-  approvalRequests.push(newRequest);
+  const created = await apiFetch<ApprovalRequest>("/api/approval-requests", {
+    method: "POST",
+    body: JSON.stringify(newRequest),
+  });
+
   notifyListeners();
-  return newRequest;
+  return created;
 }
 
-// Update approval request status (used by Treasurer)
-export function updateApprovalRequestStatus(
+export async function updateApprovalRequestStatus(
   id: string,
   status: "Approved" | "Rejected",
-  treasurerNotes: string
-): ApprovalRequest | null {
-  const request = approvalRequests.find(req => req.id === id);
-  if (!request) {
+  treasurerNotes: string,
+  finalizedAmount?: number
+): Promise<ApprovalRequest | null> {
+  const payload = {
+    status,
+    treasurerNotes,
+    finalizedAmount,
+  };
+
+  try {
+    const updated = await apiFetch<ApprovalRequest>(
+      `/api/approval-requests/${encodeURIComponent(id)}/status`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    notifyListeners();
+    return updated;
+  } catch {
     return null;
   }
-
-  request.status = status;
-  request.treasurerNotes = treasurerNotes;
-  request.reviewDate = new Date().toISOString();
-
-  notifyListeners();
-  return request;
 }
 
-// Get the latest approval request for a specific PIN and amount
-// This helps the clerk know if their request was approved/rejected
-export function getLatestApprovalForPIN(pin: string, proposedAmount: number): ApprovalRequest | null {
-  const requests = approvalRequests
-    .filter(req => req.pin === pin && req.proposedAmount === proposedAmount)
-    .sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
-
-  return requests.length > 0 ? requests[0] : null;
+function amountsMatch(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.01;
 }
+
+/** Penalty amount the Treasurer set (approved) or the clerk proposed (pending). */
+export function getEffectivePenaltyAmount(approval: ApprovalRequest): number {
+  if (approval.status === "Approved") {
+    return approval.finalizedAmount ?? approval.proposedAmount;
+  }
+  if (approval.status === "Rejected") {
+    return approval.finalizedAmount ?? approval.currentAmount;
+  }
+  return approval.proposedAmount;
+}
+
+export function penaltyPercentageFromAmount(
+  basicRPT: number,
+  sef: number,
+  penaltyAmount: number
+): number {
+  const baseTax = basicRPT + sef;
+  if (baseTax <= 0 || penaltyAmount <= 0) return 0;
+  return Math.round((penaltyAmount / baseTax) * 10000) / 100;
+}
+
+/** Most recent Treasurer-approved penalty request for a PIN (any amount). */
+export async function getLatestApprovedApprovalForPIN(
+  pin: string
+): Promise<ApprovalRequest | null> {
+  const requests = (await getApprovalRequestsByPIN(pin))
+    .filter(req => req.status === "Approved")
+    .sort(
+      (a, b) =>
+        new Date(b.reviewDate ?? b.requestDate).getTime() -
+        new Date(a.reviewDate ?? a.requestDate).getTime()
+    );
+
+  return requests[0] ?? null;
+}
+
+// Helps the clerk know if their request was approved/rejected
+export async function getLatestApprovalForPIN(
+  pin: string,
+  penaltyAmount: number,
+  approvalId?: string
+): Promise<ApprovalRequest | null> {
+  const requests = (await getApprovalRequestsByPIN(pin)).sort(
+    (a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime()
+  );
+
+  if (approvalId) {
+    const byId = requests.find(req => req.id === approvalId);
+    if (byId) return byId;
+  }
+
+  const matchingAmount = requests.filter(req =>
+    amountsMatch(getEffectivePenaltyAmount(req), penaltyAmount) ||
+    amountsMatch(req.proposedAmount, penaltyAmount)
+  );
+
+  return matchingAmount.length > 0 ? matchingAmount[0] : null;
+}
+

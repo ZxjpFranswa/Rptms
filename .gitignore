@@ -1,6 +1,9 @@
 # Local git backup (do not commit)
 .git-iso/
 
+# SQLite database
+data/
+
 # Logs
 logs
 *.log

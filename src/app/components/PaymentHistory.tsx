@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Download, Filter, Eye } from "lucide-react";
+import { getAllPayments } from "../utils/payments";
 
 interface PaymentRecord {
   id: string;
@@ -23,88 +24,11 @@ export default function PaymentHistory() {
   const [filterYear, setFilterYear] = useState("all");
   const [selectedPayment, setSelectedPayment] = useState<PaymentRecord | null>(null);
 
-  const paymentRecords: PaymentRecord[] = [
-    {
-      id: "1",
-      orNumber: "OR-2026-001234",
-      pin: "001-2024-0045",
-      taxpayer: "Juan Dela Cruz",
-      propertyAddress: "Lot 5, Block 3, Magarao, Camarines Sur",
-      amount: 5250.00,
-      paymentMethod: "Cash",
-      paymentDate: "2026-05-12T10:30:00",
-      fiscalYear: "2026",
-      cashier: "Maria Santos",
-      basicRPT: 2500,
-      sef: 2500,
-      penalties: 250,
-      discount: 0,
-    },
-    {
-      id: "2",
-      orNumber: "OR-2026-001233",
-      pin: "001-2024-0123",
-      taxpayer: "Maria Santos",
-      propertyAddress: "Lot 12, Barangay San Juan, Magarao",
-      amount: 3400.00,
-      paymentMethod: "Check",
-      paymentDate: "2026-05-12T09:15:00",
-      fiscalYear: "2026",
-      cashier: "Pedro Reyes",
-      basicRPT: 1800,
-      sef: 1800,
-      penalties: 0,
-      discount: 200,
-    },
-    {
-      id: "3",
-      orNumber: "OR-2026-001232",
-      pin: "001-2024-0089",
-      taxpayer: "Pedro Reyes",
-      propertyAddress: "Block 7, Poblacion, Magarao",
-      amount: 2100.00,
-      paymentMethod: "Cash",
-      paymentDate: "2026-05-11T14:45:00",
-      fiscalYear: "2026",
-      cashier: "Maria Santos",
-      basicRPT: 1000,
-      sef: 1000,
-      penalties: 100,
-      discount: 0,
-    },
-    {
-      id: "4",
-      orNumber: "OR-2026-001231",
-      pin: "001-2024-0234",
-      taxpayer: "Ana Garcia",
-      propertyAddress: "Lot 23, Barangay Centro, Magarao",
-      amount: 6750.00,
-      paymentMethod: "Cash",
-      paymentDate: "2026-05-11T11:20:00",
-      fiscalYear: "2026",
-      cashier: "Pedro Reyes",
-      basicRPT: 3200,
-      sef: 3200,
-      penalties: 350,
-      discount: 0,
-    },
-    {
-      id: "5",
-      orNumber: "OR-2025-008923",
-      pin: "001-2023-0456",
-      taxpayer: "Roberto Cruz",
-      propertyAddress: "Lot 8, Barangay San Pantaleon, Magarao",
-      amount: 4500.00,
-      paymentMethod: "Check",
-      paymentDate: "2025-12-15T13:30:00",
-      fiscalYear: "2025",
-      cashier: "Maria Santos",
-      basicRPT: 2100,
-      sef: 2100,
-      penalties: 0,
-      discount: 300,
-    },
-  ];
+  const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
+
+  useEffect(() => {
+    getAllPayments().then(setPaymentRecords).catch(console.error);
+  }, []);
 
   const filteredRecords = paymentRecords.filter(record => {
     const matchesSearch =

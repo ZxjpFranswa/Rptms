@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Filter, FileText, AlertCircle } from "lucide-react";
+import { getAuditLog } from "../utils/payments";
 
 interface AuditEntry {
   id: string;
@@ -7,7 +8,7 @@ interface AuditEntry {
   userId: string;
   userName: string;
   action: string;
-  entityType: "Tax Bill" | "Payment" | "Exemption" | "Penalty Waiver" | "Tax Adjustment";
+  entityType: string;
   entityId: string;
   changes: string;
   reason: string;
@@ -19,104 +20,11 @@ export default function AuditLog() {
   const [filterAction, setFilterAction] = useState("all");
   const [selectedEntry, setSelectedEntry] = useState<AuditEntry | null>(null);
 
-  const auditEntries: AuditEntry[] = [
-    {
-      id: "LOG-2026-001234",
-      timestamp: "2026-05-12T14:30:15",
-      userId: "USER-001",
-      userName: "Maria Santos (Treasurer)",
-      action: "Approved Tax Exemption",
-      entityType: "Exemption",
-      entityId: "REQ-2026-001",
-      changes: "Tax amount reduced from ₱15,000.00 to ₱0.00",
-      reason: "Government-owned land, exempt from property tax per LGC Section 234",
-      ipAddress: "192.168.1.45",
-    },
-    {
-      id: "LOG-2026-001235",
-      timestamp: "2026-05-12T13:45:22",
-      userId: "USER-002",
-      userName: "Pedro Cruz (Cashier)",
-      action: "Processed Payment",
-      entityType: "Payment",
-      entityId: "OR-2026-001234",
-      changes: "Payment of ₱5,250.00 received for PIN 001-2024-0045",
-      reason: "Regular payment transaction",
-      ipAddress: "192.168.1.52",
-    },
-    {
-      id: "LOG-2026-001236",
-      timestamp: "2026-05-12T11:20:08",
-      userId: "USER-003",
-      userName: "Ana Lopez (Revenue Clerk)",
-      action: "Manual Penalty Adjustment",
-      entityType: "Penalty Waiver",
-      entityId: "PIN-001-2024-0089",
-      changes: "Penalty reduced from ₱450.00 to ₱100.00",
-      reason: "Taxpayer was hospitalized during payment period",
-      ipAddress: "192.168.1.38",
-    },
-    {
-      id: "LOG-2026-001237",
-      timestamp: "2026-05-12T10:15:33",
-      userId: "USER-003",
-      userName: "Ana Lopez (Revenue Clerk)",
-      action: "Manual Discount Applied",
-      entityType: "Tax Adjustment",
-      entityId: "PIN-001-2024-0123",
-      changes: "Early payment discount of ₱200.00 applied",
-      reason: "Payment made within early bird incentive period",
-      ipAddress: "192.168.1.38",
-    },
-    {
-      id: "LOG-2026-001238",
-      timestamp: "2026-05-11T16:45:12",
-      userId: "USER-001",
-      userName: "Maria Santos (Treasurer)",
-      action: "Approved Penalty Waiver",
-      entityType: "Penalty Waiver",
-      entityId: "REQ-2026-002",
-      changes: "Penalty reduced from ₱450.00 to ₱100.00 for PIN 001-2024-0089",
-      reason: "Medical emergency documentation provided",
-      ipAddress: "192.168.1.45",
-    },
-    {
-      id: "LOG-2026-001239",
-      timestamp: "2026-05-11T15:20:44",
-      userId: "USER-003",
-      userName: "Ana Lopez (Revenue Clerk)",
-      action: "Tax Bill Correction",
-      entityType: "Tax Adjustment",
-      entityId: "PIN-001-2024-0234",
-      changes: "Total due adjusted from ₱6,750.00 to ₱5,200.00",
-      reason: "Historical billing error - property was double-assessed in 2025",
-      ipAddress: "192.168.1.38",
-    },
-    {
-      id: "LOG-2026-001240",
-      timestamp: "2026-05-11T14:10:27",
-      userId: "USER-002",
-      userName: "Pedro Cruz (Cashier)",
-      action: "Processed Payment",
-      entityType: "Payment",
-      entityId: "OR-2026-001232",
-      changes: "Payment of ₱2,100.00 received for PIN 001-2024-0089",
-      reason: "Partial payment transaction",
-      ipAddress: "192.168.1.52",
-    },
-    {
-      id: "LOG-2026-001241",
-      timestamp: "2026-05-10T16:30:55",
-      userId: "USER-001",
-      userName: "Maria Santos (Treasurer)",
-      action: "Rejected Tax Exemption",
-      entityType: "Exemption",
-      entityId: "REQ-2026-005",
-      changes: "Tax exemption request denied, amount remains ₱12,000.00",
-      reason: "Insufficient documentation for exemption claim",
-      ipAddress: "192.168.1.45",
-    },
-  ];
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+
+  useEffect(() => {
+    getAuditLog().then(setAuditEntries).catch(console.error);
+  }, []);
 
   const filteredEntries = auditEntries.filter(entry => {
     const matchesSearch =

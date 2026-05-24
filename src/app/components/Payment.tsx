@@ -246,8 +246,10 @@ export default function Payment() {
     setShowReceipt(true);
   };
 
-  const handlePrintReceipt = () => {
-    window.print();
+const handlePrintReceipt = () => {
+    setTimeout(() => {
+      window.print();
+    }, 50);
   };
 
   const resetForm = () => {
@@ -260,13 +262,13 @@ export default function Payment() {
     setManualDiscount("");
   };
 
-  if (showReceipt && selectedBilling) {
+if (showReceipt && selectedBilling) {
     const penaltyAmount = parseFloat(manualPenalties) || 0;
     const discountAmount = parseFloat(manualDiscount) || 0;
 
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white border border-[#e5e7eb] rounded-[8px] shadow-[0px_1px_2px_0px_rgba(0,0,0,0.1)] p-8">
+      <div className="max-w-4xl mx-auto bb-print-root">
+        <div className="bg-white border border-[#e5e7eb] rounded-[8px] shadow-[0px_1px_2px_0px_rgba(0,0,0,0.1)] p-8 bb-print-surface">
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
               <CheckCircle className="w-16 h-16 text-[#059467]" />

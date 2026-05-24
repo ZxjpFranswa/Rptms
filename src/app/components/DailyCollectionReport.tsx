@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckCircle, Download, Calendar, DollarSign } from "lucide-react";
+import { getDailyCollections, getTransactionsByDate } from "../utils/payments";
 
 interface DailyCollection {
   date: string;
@@ -26,91 +27,18 @@ interface TransactionDetail {
 }
 
 export default function DailyCollectionReport() {
-  const [selectedDate, setSelectedDate] = useState("2026-05-12");
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [dailyCollections, setDailyCollections] = useState<DailyCollection[]>([]);
+  const [todayTransactions, setTodayTransactions] = useState<TransactionDetail[]>([]);
 
-  const [dailyCollections, setDailyCollections] = useState<DailyCollection[]>([
-    {
-      date: "2026-05-12",
-      basicRPT: 22500,
-      sef: 22500,
-      penalties: 1250,
-      discounts: 500,
-      totalGross: 46250,
-      totalNet: 45750,
-      transactionCount: 8,
-      status: "Pending",
-    },
-    {
-      date: "2026-05-11",
-      basicRPT: 18200,
-      sef: 18200,
-      penalties: 950,
-      discounts: 300,
-      totalGross: 37350,
-      totalNet: 37050,
-      transactionCount: 6,
-      status: "Cleared",
-    },
-    {
-      date: "2026-05-10",
-      basicRPT: 15800,
-      sef: 15800,
-      penalties: 650,
-      discounts: 400,
-      totalGross: 32250,
-      totalNet: 31850,
-      transactionCount: 5,
-      status: "Cleared",
-    },
-  ]);
+  useEffect(() => {
+    getDailyCollections().then(setDailyCollections).catch(console.error);
+  }, []);
 
-  const todayTransactions: TransactionDetail[] = [
-    {
-      orNumber: "OR-2026-001234",
-      pin: "001-2024-0045",
-      taxpayer: "Juan Dela Cruz",
-      basicRPT: 2500,
-      sef: 2500,
-      penalties: 250,
-      discount: 0,
-      total: 5250,
-      time: "10:30 AM",
-    },
-    {
-      orNumber: "OR-2026-001235",
-      pin: "001-2024-0123",
-      taxpayer: "Maria Santos",
-      basicRPT: 1800,
-      sef: 1800,
-      penalties: 0,
-      discount: 200,
-      total: 3400,
-      time: "11:15 AM",
-    },
-    {
-      orNumber: "OR-2026-001236",
-      pin: "001-2024-0312",
-      taxpayer: "Carlos Mendoza",
-      basicRPT: 4000,
-      sef: 4000,
-      penalties: 200,
-      discount: 0,
-      total: 8200,
-      time: "01:45 PM",
-    },
-    {
-      orNumber: "OR-2026-001237",
-      pin: "001-2024-0156",
-      taxpayer: "Roberto Cruz",
-      basicRPT: 2100,
-      sef: 2100,
-      penalties: 0,
-      discount: 300,
-      total: 3900,
-      time: "02:30 PM",
-    },
-  ];
+  useEffect(() => {
+    getTransactionsByDate(selectedDate).then(setTodayTransactions).catch(() => setTodayTransactions([]));
+  }, [selectedDate]);
 
   const handleMarkAsCleared = () => {
     setDailyCollections(prev =>
@@ -164,12 +92,18 @@ export default function DailyCollectionReport() {
       {/* Daily Abstract Summary */}
       {selectedCollection && (
         <>
-          <div className="bg-white border border-[#e5e7eb] rounded-[8px] shadow-[0px_1px_2px_0px_rgba(0,0,0,0.1)] p-6">
+          <div className="bg-white border border-[#e5e7eb] rounded-[8px] shadow-[0px_1px_2px_0px_rgba(0,0,0,0.1)] p-6 bb-print-root">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-['Poppins'] font-semibold text-[20px] text-gray-900">
                 Daily Abstract of Collections
               </h3>
-              <button className="flex items-center gap-2 text-[#059467] hover:text-[#048358] font-['Poppins'] font-medium">
+              <button
+                onClick={() => {
+                  // Print/export the report using the same browser “Save as PDF” flow.
+                  setTimeout(() => window.print(), 50);
+                }}
+                className="flex items-center gap-2 text-[#059467] hover:text-[#048358] font-['Poppins'] font-medium"
+              >
                 <Download className="w-5 h-5" />
                 Export PDF
               </button>

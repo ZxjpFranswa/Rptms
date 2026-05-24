@@ -1,15 +1,20 @@
 import { useState, useEffect } from "react";
 import { Search, Edit2, Save, Mail, CheckCircle, AlertTriangle, Info, Clock, XCircle, X } from "lucide-react";
 import {
+  type ApprovalRequest,
   createApprovalRequest,
+  getApprovalRequestById,
   getLatestApprovalForPIN,
+  getLatestApprovedApprovalForPIN,
+  getEffectivePenaltyAmount,
+  penaltyPercentageFromAmount,
   subscribeToApprovalUpdates,
 } from "../utils/approvalRequests";
 import {
   createSOA,
   markSOAasSent,
-  getLatestSOAForPIN,
 } from "../utils/soaManagement";
+import { getAllTaxpayers, type Taxpayer, taxpayerTotalDue } from "../utils/taxpayers";
 
 interface TaxBilling {
   pin: string;
@@ -35,7 +40,12 @@ interface TaxpayerListItem {
   totalDue: number;
 }
 
-export default function ClerkSOA() {
+interface ClerkSOAProps {
+  prefillApprovalId?: string | null;
+  onPrefillConsumed?: () => void;
+}
+
+export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: ClerkSOAProps) {
   const [searchPIN, setSearchPIN] = useState("");
   const [selectedBilling, setSelectedBilling] = useState<TaxBilling | null>(null);
   const [penaltyPercentage, setPenaltyPercentage] = useState(""); // Penalty as percentage
@@ -46,124 +56,195 @@ export default function ClerkSOA() {
   const [earlyPaymentNote, setEarlyPaymentNote] = useState("");
 
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
+  const [linkedApprovalId, setLinkedApprovalId] = useState<string | null>(null);
+  const [taxpayers, setTaxpayers] = useState<Taxpayer[]>([]);
 
-  // Subscribe to approval updates to reflect real-time changes
+  useEffect(() => {
+    getAllTaxpayers().then(setTaxpayers).catch(console.error);
+  }, []);
+
+  const toTaxBilling = (t: Taxpayer): TaxBilling => ({
+    pin: t.pin,
+    taxpayer: t.taxpayerName,
+    taxpayerEmail: t.taxpayerEmail ?? "",
+    propertyAddress: t.propertyAddress ?? "",
+    assessedValue: t.assessedValue,
+    basicRPT: t.basicRPT,
+    sef: t.sef,
+    penaltyPercentage: t.penaltyPercentage,
+    penaltyReason: t.penaltyReason,
+    totalDue: taxpayerTotalDue(t),
+    fiscalYear: t.fiscalYear,
+    status: t.status,
+    approvalStatus: "none",
+  });
+
+  const syncPenaltyFromApproval = (billing: TaxBilling, approval: ApprovalRequest) => {
+    const penaltyAmount = getEffectivePenaltyAmount(approval);
+    const percentage = penaltyPercentageFromAmount(
+      billing.basicRPT,
+      billing.sef,
+      penaltyAmount
+    );
+    const percentStr = percentage > 0 ? percentage.toString() : "0";
+    setPenaltyPercentage(percentStr);
+    setPenaltyReason(approval.reason);
+    calculateTotal(billing, percentStr);
+    setEarlyPaymentNote(percentage > 0 ? "" : "Eligible for early payment discount at cashier");
+  };
+
+  const applyApprovalToForm = async (approval: ApprovalRequest) => {
+    const found = taxpayers.find(t => t.pin === approval.pin);
+    if (!found) {
+      alert(`Taxpayer with PIN ${approval.pin} was not found.`);
+      return;
+    }
+
+    const billing = toTaxBilling(found);
+    setSearchPIN(approval.pin);
+    setSelectedBilling(billing);
+    syncPenaltyFromApproval(billing, approval);
+
+    if (approval.status === "Approved") {
+      setCurrentApprovalStatus("approved");
+      setLinkedApprovalId(approval.id);
+    } else if (approval.status === "Rejected") {
+      setCurrentApprovalStatus("rejected");
+      setLinkedApprovalId(null);
+    } else {
+      setCurrentApprovalStatus("pending");
+      setLinkedApprovalId(null);
+    }
+  };
+
+  const checkApprovalStatus = async (billing: TaxBilling, percentage: number, approvalId?: string) => {
+    const penaltyAmount = calculatePenaltyAmount(billing, percentage);
+    let existingApproval = await getLatestApprovalForPIN(billing.pin, penaltyAmount, approvalId);
+
+    // Form may still show the taxpayer's default % while a different approved amount exists.
+    if (!existingApproval) {
+      const latestApproved = await getLatestApprovedApprovalForPIN(billing.pin);
+      if (latestApproved) {
+        existingApproval = latestApproved;
+        syncPenaltyFromApproval(billing, latestApproved);
+      }
+    }
+
+    if (existingApproval) {
+      if (existingApproval.status === "Approved") {
+        setCurrentApprovalStatus("approved");
+        setLinkedApprovalId(existingApproval.id);
+      } else if (existingApproval.status === "Rejected") {
+        setCurrentApprovalStatus("rejected");
+        setLinkedApprovalId(null);
+      } else {
+        setCurrentApprovalStatus("pending");
+        setLinkedApprovalId(null);
+      }
+    } else {
+      setCurrentApprovalStatus("none");
+      setLinkedApprovalId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!prefillApprovalId || taxpayers.length === 0) return;
+
+    let cancelled = false;
+
+    const loadFromApproval = async () => {
+      const approval = await getApprovalRequestById(prefillApprovalId);
+      if (cancelled) return;
+
+      if (!approval) {
+        alert("Approval request not found.");
+        onPrefillConsumed?.();
+        return;
+      }
+
+      if (approval.status !== "Approved") {
+        alert("Only approved requests can be opened in Generate SOA.");
+        onPrefillConsumed?.();
+        return;
+      }
+
+      await applyApprovalToForm(approval);
+      onPrefillConsumed?.();
+    };
+
+    void loadFromApproval();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [prefillApprovalId, taxpayers]);
+
+  const refreshApprovalFromServer = async (billing: TaxBilling, approvalId?: string | null) => {
+    if (approvalId) {
+      const byId = await getApprovalRequestById(approvalId);
+      if (byId?.status === "Approved") {
+        syncPenaltyFromApproval(billing, byId);
+        setCurrentApprovalStatus("approved");
+        setLinkedApprovalId(byId.id);
+        return;
+      }
+      if (byId?.status === "Rejected") {
+        setCurrentApprovalStatus("rejected");
+        setLinkedApprovalId(null);
+        return;
+      }
+    }
+
+    const approved = await getLatestApprovedApprovalForPIN(billing.pin);
+    if (approved) {
+      syncPenaltyFromApproval(billing, approved);
+      setCurrentApprovalStatus("approved");
+      setLinkedApprovalId(approved.id);
+      return;
+    }
+
+    const percentage = parseFloat(penaltyPercentage) || 0;
+    if (percentage > 0) {
+      await checkApprovalStatus(billing, percentage, approvalId ?? undefined);
+    }
+  };
+
   useEffect(() => {
     if (!selectedBilling) return;
-
     const unsubscribe = subscribeToApprovalUpdates(() => {
-      // Check if there's an approval for the current billing
-      const percentage = parseFloat(penaltyPercentage) || 0;
-      if (percentage > 0) {
-        const penaltyAmount = calculatePenaltyAmount(selectedBilling, percentage);
-        const latestApproval = getLatestApprovalForPIN(selectedBilling.pin, penaltyAmount);
-        if (latestApproval) {
-          if (latestApproval.status === "Approved") {
-            setCurrentApprovalStatus("approved");
-          } else if (latestApproval.status === "Rejected") {
-            setCurrentApprovalStatus("rejected");
-          } else {
-            setCurrentApprovalStatus("pending");
-          }
-        }
-      }
+      void refreshApprovalFromServer(selectedBilling, linkedApprovalId);
     });
-
     return unsubscribe;
-  }, [selectedBilling, penaltyPercentage]);
+  }, [selectedBilling, penaltyPercentage, linkedApprovalId]);
 
-  const allTaxpayers: TaxpayerListItem[] = [
-    {
-      pin: "001-2024-0045",
-      taxpayer: "Juan Dela Cruz",
-      propertyAddress: "Lot 5, Block 3, Magarao, Camarines Sur",
-      status: "Unpaid",
-      totalDue: 5250,
-    },
-    {
-      pin: "001-2024-0123",
-      taxpayer: "Maria Santos",
-      propertyAddress: "Lot 12, Barangay San Juan, Magarao",
-      status: "Unpaid",
-      totalDue: 3400,
-    },
-    {
-      pin: "001-2024-0089",
-      taxpayer: "Pedro Reyes",
-      propertyAddress: "Block 7, Poblacion, Magarao",
-      status: "Delinquent",
-      totalDue: 6850,
-    },
-    {
-      pin: "001-2024-0234",
-      taxpayer: "Ana Garcia",
-      propertyAddress: "Lot 23, Barangay Centro, Magarao",
-      status: "Unpaid",
-      totalDue: 6750,
-    },
-    {
-      pin: "001-2024-0156",
-      taxpayer: "Roberto Cruz",
-      propertyAddress: "Lot 8, Barangay San Pantaleon, Magarao",
-      status: "Unpaid",
-      totalDue: 4500,
-    },
-    {
-      pin: "001-2024-0267",
-      taxpayer: "Linda Bautista",
-      propertyAddress: "Lot 15, Barangay San Miguel, Magarao",
-      status: "Partial",
-      totalDue: 2800,
-    },
-  ];
+  useEffect(() => {
+    if (currentApprovalStatus !== "pending" || !linkedApprovalId || !selectedBilling) return;
 
-  const mockBillings: TaxBilling[] = [
-    {
-      pin: "001-2024-0045",
-      taxpayer: "Juan Dela Cruz",
-      taxpayerEmail: "juan.delacruz@email.com",
-      propertyAddress: "Lot 5, Block 3, Magarao, Camarines Sur",
-      assessedValue: 250000,
-      basicRPT: 2500,
-      sef: 2500,
-      penaltyPercentage: 4, // 2 months overdue × 2% per month
-      penaltyReason: "Late payment - 2 months overdue (2% interest per month)",
-      totalDue: 5200, // 5000 + (5000 × 4%)
-      fiscalYear: "2026",
-      status: "Unpaid",
-      approvalStatus: "none",
-    },
-    {
-      pin: "001-2024-0123",
-      taxpayer: "Maria Santos",
-      taxpayerEmail: "maria.santos@email.com",
-      propertyAddress: "Lot 12, Barangay San Juan, Magarao",
-      assessedValue: 180000,
-      basicRPT: 1800,
-      sef: 1800,
-      penaltyPercentage: 0,
-      penaltyReason: "",
-      totalDue: 3600,
-      fiscalYear: "2026",
-      status: "Unpaid",
-      approvalStatus: "none",
-    },
-    {
-      pin: "001-2024-0089",
-      taxpayer: "Pedro Reyes",
-      taxpayerEmail: "pedro.reyes@email.com",
-      propertyAddress: "Block 7, Poblacion, Magarao",
-      assessedValue: 320000,
-      basicRPT: 3200,
-      sef: 3200,
-      penaltyPercentage: 8, // 4 months overdue × 2% per month
-      penaltyReason: "Delinquent - 4 months overdue (2% interest per month)",
-      totalDue: 6912, // 6400 + (6400 × 8%)
-      fiscalYear: "2026",
-      status: "Delinquent",
-      approvalStatus: "none",
-    },
-  ];
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      await refreshApprovalFromServer(selectedBilling, linkedApprovalId);
+    };
+
+    void poll();
+    const interval = setInterval(() => {
+      void poll();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentApprovalStatus, linkedApprovalId, selectedBilling]);
+
+  const allTaxpayers: TaxpayerListItem[] = taxpayers.map(t => ({
+    pin: t.pin,
+    taxpayer: t.taxpayerName,
+    propertyAddress: t.propertyAddress ?? "",
+    status: t.status,
+    totalDue: taxpayerTotalDue(t),
+  }));
 
   // Helper function to calculate penalty amount from percentage
   const calculatePenaltyAmount = (billing: TaxBilling, percentage: number): number => {
@@ -171,61 +252,43 @@ export default function ClerkSOA() {
     return baseTax * (percentage / 100);
   };
 
-  const handleSearch = () => {
-    const found = mockBillings.find(b => b.pin === searchPIN);
+  const loadTaxpayerIntoForm = async (found: Taxpayer) => {
+    const billing = toTaxBilling(found);
+    const approved = await getLatestApprovedApprovalForPIN(found.pin);
+
+    setSelectedBilling(billing);
+
+    if (approved) {
+      syncPenaltyFromApproval(billing, approved);
+      setCurrentApprovalStatus("approved");
+      setLinkedApprovalId(approved.id);
+      return;
+    }
+
+    setPenaltyPercentage(found.penaltyPercentage.toString());
+    setPenaltyReason(found.penaltyReason);
+    await checkApprovalStatus(billing, found.penaltyPercentage);
+    calculateTotal(billing, found.penaltyPercentage.toString());
+    setEarlyPaymentNote(
+      found.penaltyPercentage > 0 ? "" : "Eligible for early payment discount at cashier"
+    );
+  };
+
+  const handleSearch = async () => {
+    const found = taxpayers.find(t => t.pin === searchPIN);
     if (found) {
-      setSelectedBilling(found);
-      setPenaltyPercentage(found.penaltyPercentage.toString());
-      setPenaltyReason(found.penaltyReason);
-
-      // Check for existing approval in the shared system
-      const penaltyAmount = calculatePenaltyAmount(found, found.penaltyPercentage);
-      const existingApproval = getLatestApprovalForPIN(found.pin, penaltyAmount);
-      if (existingApproval) {
-        if (existingApproval.status === "Approved") {
-          setCurrentApprovalStatus("approved");
-        } else if (existingApproval.status === "Rejected") {
-          setCurrentApprovalStatus("rejected");
-        } else {
-          setCurrentApprovalStatus("pending");
-        }
-      } else {
-        setCurrentApprovalStatus("none");
-      }
-
-      calculateTotal(found, found.penaltyPercentage.toString());
-      setEarlyPaymentNote(found.penaltyPercentage > 0 ? "" : "Eligible for early payment discount at cashier");
+      await loadTaxpayerIntoForm(found);
     } else {
       alert("Property ID not found");
       setSelectedBilling(null);
     }
   };
 
-  const handleSelectTaxpayer = (pin: string) => {
+  const handleSelectTaxpayer = async (pin: string) => {
     setSearchPIN(pin);
-    const found = mockBillings.find(b => b.pin === pin);
+    const found = taxpayers.find(t => t.pin === pin);
     if (found) {
-      setSelectedBilling(found);
-      setPenaltyPercentage(found.penaltyPercentage.toString());
-      setPenaltyReason(found.penaltyReason);
-
-      // Check for existing approval in the shared system
-      const penaltyAmount = calculatePenaltyAmount(found, found.penaltyPercentage);
-      const existingApproval = getLatestApprovalForPIN(found.pin, penaltyAmount);
-      if (existingApproval) {
-        if (existingApproval.status === "Approved") {
-          setCurrentApprovalStatus("approved");
-        } else if (existingApproval.status === "Rejected") {
-          setCurrentApprovalStatus("rejected");
-        } else {
-          setCurrentApprovalStatus("pending");
-        }
-      } else {
-        setCurrentApprovalStatus("none");
-      }
-
-      calculateTotal(found, found.penaltyPercentage.toString());
-      setEarlyPaymentNote(found.penaltyPercentage > 0 ? "" : "Eligible for early payment discount at cashier");
+      await loadTaxpayerIntoForm(found);
     }
   };
 
@@ -242,6 +305,7 @@ export default function ClerkSOA() {
       calculateTotal(selectedBilling, value);
       if (currentApprovalStatus === "approved") {
         setCurrentApprovalStatus("none");
+        setLinkedApprovalId(null);
       }
     }
   };
@@ -258,7 +322,7 @@ export default function ClerkSOA() {
     return currentApprovalStatus === "approved";
   };
 
-  const handleSaveAndEmail = () => {
+  const handleSaveAndEmail = async () => {
     if (!selectedBilling) return;
 
     const percentage = parseFloat(penaltyPercentage) || 0;
@@ -274,15 +338,21 @@ export default function ClerkSOA() {
       return;
     }
 
-    // Get the approval request ID if this was an approved penalty adjustment
     let approvalRequestId: string | undefined;
     if (percentage > 0 && currentApprovalStatus === "approved") {
-      const approval = getLatestApprovalForPIN(selectedBilling.pin, penaltyAmount);
-      approvalRequestId = approval?.id;
+      if (linkedApprovalId) {
+        approvalRequestId = linkedApprovalId;
+      } else {
+        const approval = await getLatestApprovalForPIN(
+          selectedBilling.pin,
+          penaltyAmount,
+          linkedApprovalId ?? undefined
+        );
+        approvalRequestId = approval?.id;
+      }
     }
 
-    // Create SOA in the shared system
-    const newSOA = createSOA(
+    const newSOA = await createSOA(
       selectedBilling.pin,
       selectedBilling.taxpayer,
       selectedBilling.taxpayerEmail,
@@ -294,24 +364,11 @@ export default function ClerkSOA() {
       penaltyReason,
       selectedBilling.fiscalYear,
       selectedBilling.status,
-      "Ana Lopez (Revenue Clerk)", // In real system, this would be logged-in user
+      "Ana Lopez (Revenue Clerk)",
       approvalRequestId
     );
 
-    // Mark SOA as sent
-    markSOAasSent(newSOA.id);
-
-    console.log("SOA saved and sent to taxpayer:", {
-      soaId: newSOA.id,
-      pin: selectedBilling.pin,
-      taxpayer: selectedBilling.taxpayer,
-      email: selectedBilling.taxpayerEmail,
-      penaltyPercentage: percentage,
-      penalties: penaltyAmount,
-      penaltyReason,
-      totalDue: newSOA.totalDue,
-      sentToCashier: true,
-    });
+    await markSOAasSent(newSOA.id);
 
     alert(`SOA ${newSOA.id} has been generated and sent to ${selectedBilling.taxpayer} (${selectedBilling.taxpayerEmail}). This SOA is now available for the Cashier to process payments.`);
 
@@ -319,7 +376,7 @@ export default function ClerkSOA() {
     setTimeout(() => setShowSuccess(false), 3000);
   };
 
-  const handleRequestApproval = () => {
+  const handleRequestApproval = async () => {
     if (!selectedBilling) return;
 
     const percentage = parseFloat(penaltyPercentage) || 0;
@@ -336,20 +393,18 @@ export default function ClerkSOA() {
       return;
     }
 
-    // Create approval request in the shared system
-    const newRequest = createApprovalRequest(
+    const newRequest = await createApprovalRequest(
       selectedBilling.pin,
       selectedBilling.taxpayer,
       "Penalty Waiver",
       originalPenaltyAmount,
       penaltyAmount,
       penaltyReason,
-      "Ana Lopez (Revenue Clerk)" // In a real system, this would be the logged-in user's name
+      "Ana Lopez (Revenue Clerk)"
     );
 
-    console.log("Requesting Treasurer Approval:", newRequest);
-
     setCurrentApprovalStatus("pending");
+    setLinkedApprovalId(newRequest.id);
     setShowRequestApproval(false);
     alert(`Approval request ${newRequest.id} submitted to Municipal Treasurer. You will be notified when it's reviewed.`);
   };
@@ -375,7 +430,12 @@ export default function ClerkSOA() {
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
             <CheckCircle className="w-5 h-5 text-green-600" />
             <span className="font-['Poppins'] text-[14px] text-green-800">
-              <span className="font-semibold">Approved:</span> You can now send this SOA to the taxpayer
+              <span className="font-semibold">Treasurer Approved:</span> Penalty of ₱
+              {calculatePenaltyAmount(selectedBilling!, parseFloat(penaltyPercentage) || 0).toLocaleString(
+                "en-PH",
+                { minimumFractionDigits: 2 }
+              )}{" "}
+              applied — you can now send this SOA to the taxpayer
             </span>
           </div>
         );
