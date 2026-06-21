@@ -1,0 +1,1 @@
+{"version":2,"defects":{"Tests\\Feature\\ApplicationWorkflowTest::test_assessor_can_approve_application":8,"Tests\\Feature\\AuthTest::test_login_returns_token_and_user":8,"Tests\\Feature\\AuthTest::test_me_requires_authentication":8},"times":[]}
