@@ -1,0 +1,33 @@
+/* Print support for receipts */
+
+@media print {
+  /* Hide everything by default */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Show only print root + the actual receipt */
+  .bb-print-root,
+  .bb-print-root * {
+    visibility: visible !important;
+  }
+
+  /* Remove backgrounds/shadows that can print poorly */
+  .bb-print-surface {
+    background: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  /* Layout for printed receipt */
+  .bb-print-root {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+
+  @page {
+    margin: 10mm;
+  }
+}
+
