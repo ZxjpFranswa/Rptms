@@ -34,33 +34,32 @@ export default function CashierPayment() {
   }, []);
 
 
-  const selectSOA = (soa: SOARecord) => {
-    setSearchPIN(soa.pin);
-    setSelectedBilling(soa);
-    setPaymentAmount(soa.balanceDue.toString());
-    setDiscountType("none");
-    setDiscountAmount(0);
-    setDiscountError("");
-  };
-
   const handleSearch = () => {
-    const query = searchPIN.trim().toLowerCase();
-    const found = availableSOAs.find(
-      soa =>
-        soa.status !== "Paid" &&
-        (soa.pin.toLowerCase() === query ||
-          soa.taxpayer.toLowerCase().includes(query))
-    );
+    const found = availableSOAs.find(soa => soa.pin === searchPIN && soa.status !== "Paid");
     if (found) {
-      selectSOA(found);
+      setSelectedBilling(found);
+      setPaymentAmount(found.balanceDue.toString());
+      setDiscountType("none");
+      setDiscountAmount(0);
+
+      setDiscountError("");
     } else {
       alert("Property ID not found or SOA not available. Please check if the Revenue Clerk has sent the SOA.");
       setSelectedBilling(null);
     }
   };
 
-  const handleSelectSOA = (soa: SOARecord) => {
-    selectSOA(soa);
+  const handleSelectTaxpayer = (pin: string) => {
+    setSearchPIN(pin);
+    const found = availableSOAs.find(soa => soa.pin === pin && soa.status !== "Paid");
+    if (found) {
+      setSelectedBilling(found);
+      setPaymentAmount(found.balanceDue.toString());
+      setDiscountType("none");
+      setDiscountAmount(0);
+      setDiscountError("");
+
+    }
   };
 
   const handleDiscountChange = (type: "none" | "10" | "20") => {
@@ -335,7 +334,7 @@ if (showReceipt && selectedBilling) {
         <div className="bg-white border border-[#e5e7eb] rounded-[8px] shadow-[0px_1px_2px_0px_rgba(0,0,0,0.1)] overflow-hidden">
           <div className="p-4 border-b border-gray-200 bg-gray-50">
             <h3 className="font-['Poppins'] font-semibold text-[16px] text-gray-900">
-              Bills Ready for Payment ({filteredTaxpayers.length})
+              All Taxpayers ({filteredTaxpayers.length})
             </h3>
           </div>
           <div className="max-h-[600px] overflow-y-auto">
@@ -345,7 +344,7 @@ if (showReceipt && selectedBilling) {
                 className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
                   selectedBilling?.id === soa.id ? 'bg-[#059467]/10 border-l-4 border-l-[#059467]' : ''
                 }`}
-                onClick={() => handleSelectSOA(soa)}
+                onClick={() => handleSelectTaxpayer(soa.pin)}
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex-1">

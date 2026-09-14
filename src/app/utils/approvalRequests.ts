@@ -24,44 +24,19 @@ export interface ApprovalRequest {
 
 type ApprovalUpdateListener = () => void;
 const listeners: ApprovalUpdateListener[] = [];
-const APPROVAL_BC_CHANNEL = "magarao-approval-updates";
-
-function broadcastApprovalUpdate() {
-  if (typeof BroadcastChannel === "undefined") return;
-  try {
-    const channel = new BroadcastChannel(APPROVAL_BC_CHANNEL);
-    channel.postMessage({ type: "updated" });
-    channel.close();
-  } catch {
-    // BroadcastChannel unavailable in some environments
-  }
-}
 
 export function subscribeToApprovalUpdates(listener: ApprovalUpdateListener) {
   listeners.push(listener);
-
-  let bc: BroadcastChannel | undefined;
-  if (typeof BroadcastChannel !== "undefined") {
-    try {
-      bc = new BroadcastChannel(APPROVAL_BC_CHANNEL);
-      bc.onmessage = () => listener();
-    } catch {
-      bc = undefined;
-    }
-  }
-
   return () => {
     const index = listeners.indexOf(listener);
     if (index > -1) {
       listeners.splice(index, 1);
     }
-    bc?.close();
   };
 }
 
 function notifyListeners() {
   listeners.forEach(listener => listener());
-  broadcastApprovalUpdate();
 }
 
 const API_BASE = ""; // same-origin
@@ -168,66 +143,15 @@ export async function updateApprovalRequestStatus(
   }
 }
 
-function amountsMatch(a: number, b: number): boolean {
-  return Math.abs(a - b) < 0.01;
-}
-
-/** Penalty amount the Treasurer set (approved) or the clerk proposed (pending). */
-export function getEffectivePenaltyAmount(approval: ApprovalRequest): number {
-  if (approval.status === "Approved") {
-    return approval.finalizedAmount ?? approval.proposedAmount;
-  }
-  if (approval.status === "Rejected") {
-    return approval.finalizedAmount ?? approval.currentAmount;
-  }
-  return approval.proposedAmount;
-}
-
-export function penaltyPercentageFromAmount(
-  basicRPT: number,
-  sef: number,
-  penaltyAmount: number
-): number {
-  const baseTax = basicRPT + sef;
-  if (baseTax <= 0 || penaltyAmount <= 0) return 0;
-  return Math.round((penaltyAmount / baseTax) * 10000) / 100;
-}
-
-/** Most recent Treasurer-approved penalty request for a PIN (any amount). */
-export async function getLatestApprovedApprovalForPIN(
-  pin: string
-): Promise<ApprovalRequest | null> {
-  const requests = (await getApprovalRequestsByPIN(pin))
-    .filter(req => req.status === "Approved")
-    .sort(
-      (a, b) =>
-        new Date(b.reviewDate ?? b.requestDate).getTime() -
-        new Date(a.reviewDate ?? a.requestDate).getTime()
-    );
-
-  return requests[0] ?? null;
-}
-
 // Helps the clerk know if their request was approved/rejected
 export async function getLatestApprovalForPIN(
   pin: string,
-  penaltyAmount: number,
-  approvalId?: string
+  proposedAmount: number
 ): Promise<ApprovalRequest | null> {
-  const requests = (await getApprovalRequestsByPIN(pin)).sort(
-    (a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime()
-  );
+  const requests = (await getApprovalRequestsByPIN(pin))
+    .filter(req => req.proposedAmount === proposedAmount)
+    .sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
 
-  if (approvalId) {
-    const byId = requests.find(req => req.id === approvalId);
-    if (byId) return byId;
-  }
-
-  const matchingAmount = requests.filter(req =>
-    amountsMatch(getEffectivePenaltyAmount(req), penaltyAmount) ||
-    amountsMatch(req.proposedAmount, penaltyAmount)
-  );
-
-  return matchingAmount.length > 0 ? matchingAmount[0] : null;
+  return requests.length > 0 ? requests[0] : null;
 }
 

@@ -7,7 +7,6 @@ import type { ApprovalRequestRow, SOARow } from "./db/types.js";
 
 runMigrations();
 seedDatabase();
-repo.dedupeSentSOAQueue();
 
 const app = express();
 const PORT = process.env.PORT ?? 3100;
@@ -124,7 +123,7 @@ app.get("/api/soas/:id", (req, res) => {
 
 app.post("/api/soas", (req, res) => {
   const body = req.body as SOARow;
-  const soa = repo.createSOA({ ...body, id: repo.nextSOAId() });
+  const soa = repo.createSOA({ ...body, id: body.id || repo.nextSOAId() });
   repo.createAuditLog({
     id: repo.nextAuditId(),
     timestamp: new Date().toISOString(),

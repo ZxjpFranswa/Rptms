@@ -80,29 +80,8 @@ export async function getSOAsByStatus(
   return all.filter(soa => soa.status === status);
 }
 
-/** One active cashier bill per PIN + fiscal year (newest SOA wins). */
-export function dedupeSOAsForCashier(soas: SOARecord[]): SOARecord[] {
-  const latestByPinYear = new Map<string, SOARecord>();
-  for (const soa of soas) {
-    const key = `${soa.pin}:${soa.fiscalYear}`;
-    const existing = latestByPinYear.get(key);
-    if (
-      !existing ||
-      new Date(soa.generatedDate).getTime() > new Date(existing.generatedDate).getTime()
-    ) {
-      latestByPinYear.set(key, soa);
-    }
-  }
-  return Array.from(latestByPinYear.values()).sort(
-    (a, b) => new Date(b.generatedDate).getTime() - new Date(a.generatedDate).getTime()
-  );
-}
-
 export async function getSentSOAs(): Promise<SOARecord[]> {
-  const soas = await apiFetch<SOARecord[]>("/api/soas/sent");
-  return dedupeSOAsForCashier(
-    soas.filter(soa => soa.status !== "Paid" && soa.balanceDue > 0 && soa.sentToTaxpayer)
-  );
+  return apiFetch<SOARecord[]>("/api/soas/sent");
 }
 
 export async function createSOA(
@@ -122,7 +101,7 @@ export async function createSOA(
 ): Promise<SOARecord> {
   const amountDueOriginal = basicRPT + sef + penalties;
   const payload: SOARecord = {
-    id: "",
+    id: `SOA-2026-${String(Date.now()).slice(-4)}`,
     pin,
     taxpayer,
     taxpayerEmail,

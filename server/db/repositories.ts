@@ -188,37 +188,10 @@ export function getLatestSOAForPin(pin: string): SOARow | null {
 }
 
 export function getSentSOAs(): SOARow[] {
-  // Persist: only one sent, unpaid bill per PIN + fiscal year (latest wins).
-  dedupeSentSOAQueue();
-
-  const rows = db
-    .prepare(`
-      SELECT * FROM soas
-      WHERE sent_to_taxpayer = 1 AND status != 'Paid' AND balance_due > 0
-      ORDER BY generated_date DESC
-    `)
+  return db
+    .prepare("SELECT * FROM soas WHERE sent_to_taxpayer = 1 ORDER BY generated_date DESC")
     .all()
     .map(r => mapSOA(r as Record<string, unknown>));
-
-  return pickLatestSOAPerPinYear(rows);
-}
-
-/** In-memory guard: one bill per PIN + fiscal year (newest generatedDate). */
-export function pickLatestSOAPerPinYear(soas: SOARow[]): SOARow[] {
-  const latestByPinYear = new Map<string, SOARow>();
-  for (const soa of soas) {
-    const key = `${soa.pin}:${soa.fiscalYear}`;
-    const existing = latestByPinYear.get(key);
-    if (
-      !existing ||
-      new Date(soa.generatedDate).getTime() > new Date(existing.generatedDate).getTime()
-    ) {
-      latestByPinYear.set(key, soa);
-    }
-  }
-  return Array.from(latestByPinYear.values()).sort(
-    (a, b) => new Date(b.generatedDate).getTime() - new Date(a.generatedDate).getTime()
-  );
 }
 
 export function getSOAForPayment(pin: string): SOARow | null {
@@ -249,18 +222,7 @@ export function createSOA(soa: SOARow): SOARow {
 }
 
 export function markSOAAsSent(id: string): SOARow | null {
-  const soa = getSOAById(id);
-  if (!soa) return null;
-
   const sentDate = new Date().toISOString();
-
-  // Replace any older sent bill for the same PIN and fiscal year in the cashier queue.
-  db.prepare(`
-    UPDATE soas SET sent_to_taxpayer = 0
-    WHERE pin = ? AND fiscal_year = ? AND id != ?
-      AND sent_to_taxpayer = 1 AND status != 'Paid'
-  `).run(soa.pin, soa.fiscalYear, id);
-
   const result = db.prepare(`
     UPDATE soas SET sent_to_taxpayer = 1, sent_date = ? WHERE id = ?
   `).run(sentDate, id);
@@ -370,38 +332,6 @@ export function getRecentPayments(limit = 5) {
   return getAllPayments().slice(0, limit);
 }
 
-/** Keep only the newest sent, unpaid SOA per PIN + fiscal year in the cashier queue. */
-export function dedupeSentSOAQueue(): void {
-  const groups = db
-    .prepare(`
-      SELECT pin, fiscal_year as fiscalYear
-      FROM soas
-      WHERE sent_to_taxpayer = 1 AND status != 'Paid'
-      GROUP BY pin, fiscal_year
-      HAVING COUNT(*) > 1
-    `)
-    .all() as Array<{ pin: string; fiscalYear: string }>;
-
-  for (const { pin, fiscalYear } of groups) {
-    const latest = db
-      .prepare(`
-        SELECT id FROM soas
-        WHERE pin = ? AND fiscal_year = ? AND sent_to_taxpayer = 1 AND status != 'Paid'
-        ORDER BY generated_date DESC
-        LIMIT 1
-      `)
-      .get(pin, fiscalYear) as { id: string } | undefined;
-
-    if (!latest) continue;
-
-    db.prepare(`
-      UPDATE soas SET sent_to_taxpayer = 0
-      WHERE pin = ? AND fiscal_year = ? AND id != ?
-        AND sent_to_taxpayer = 1 AND status != 'Paid'
-    `).run(pin, fiscalYear, latest.id);
-  }
-}
-
 export function getDailyCollections() {
   const rows = db.prepare(`
     SELECT date(payment_date) as date,
@@ -436,17 +366,26 @@ export function getTransactionsByDate(date: string) {
   `).all(date);
 }
 
+function nextNumericId(table: string, prefix: string, pad: number): string {
+  const row = db
+    .prepare(
+      `SELECT MAX(CAST(SUBSTR(id, ?) AS INTEGER)) as m
+       FROM ${table}
+       WHERE id GLOB ?`
+    )
+    .get(prefix.length + 1, `${prefix}[0-9]*`) as { m: number | null };
+  const next = (row.m ?? 0) + 1;
+  return `${prefix}${String(next).padStart(pad, "0")}`;
+}
+
 export function nextSOAId(): string {
-  const { c } = db.prepare("SELECT COUNT(*) as c FROM soas").get() as { c: number };
-  return `SOA-2026-${String(c + 1).padStart(4, "0")}`;
+  return nextNumericId("soas", "SOA-2026-", 4);
 }
 
 export function nextAuditId(): string {
-  const { c } = db.prepare("SELECT COUNT(*) as c FROM audit_log").get() as { c: number };
-  return `LOG-2026-${String(c + 1).padStart(6, "0")}`;
+  return nextNumericId("audit_log", "LOG-2026-", 6);
 }
 
 export function nextPaymentId(): string {
-  const { c } = db.prepare("SELECT COUNT(*) as c FROM payments").get() as { c: number };
-  return `PAY-${String(c + 1).padStart(6, "0")}`;
+  return nextNumericId("payments", "PAY-", 6);
 }

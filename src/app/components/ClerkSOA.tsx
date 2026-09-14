@@ -1,13 +1,8 @@
 import { useState, useEffect } from "react";
 import { Search, Edit2, Save, Mail, CheckCircle, AlertTriangle, Info, Clock, XCircle, X } from "lucide-react";
 import {
-  type ApprovalRequest,
   createApprovalRequest,
-  getApprovalRequestById,
   getLatestApprovalForPIN,
-  getLatestApprovedApprovalForPIN,
-  getEffectivePenaltyAmount,
-  penaltyPercentageFromAmount,
   subscribeToApprovalUpdates,
 } from "../utils/approvalRequests";
 import {
@@ -40,12 +35,7 @@ interface TaxpayerListItem {
   totalDue: number;
 }
 
-interface ClerkSOAProps {
-  prefillApprovalId?: string | null;
-  onPrefillConsumed?: () => void;
-}
-
-export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: ClerkSOAProps) {
+export default function ClerkSOA() {
   const [searchPIN, setSearchPIN] = useState("");
   const [selectedBilling, setSelectedBilling] = useState<TaxBilling | null>(null);
   const [penaltyPercentage, setPenaltyPercentage] = useState(""); // Penalty as percentage
@@ -56,7 +46,6 @@ export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: Clerk
   const [earlyPaymentNote, setEarlyPaymentNote] = useState("");
 
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
-  const [linkedApprovalId, setLinkedApprovalId] = useState<string | null>(null);
   const [taxpayers, setTaxpayers] = useState<Taxpayer[]>([]);
 
   useEffect(() => {
@@ -79,164 +68,28 @@ export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: Clerk
     approvalStatus: "none",
   });
 
-  const syncPenaltyFromApproval = (billing: TaxBilling, approval: ApprovalRequest) => {
-    const penaltyAmount = getEffectivePenaltyAmount(approval);
-    const percentage = penaltyPercentageFromAmount(
-      billing.basicRPT,
-      billing.sef,
-      penaltyAmount
-    );
-    const percentStr = percentage > 0 ? percentage.toString() : "0";
-    setPenaltyPercentage(percentStr);
-    setPenaltyReason(approval.reason);
-    calculateTotal(billing, percentStr);
-    setEarlyPaymentNote(percentage > 0 ? "" : "Eligible for early payment discount at cashier");
-  };
-
-  const applyApprovalToForm = async (approval: ApprovalRequest) => {
-    const found = taxpayers.find(t => t.pin === approval.pin);
-    if (!found) {
-      alert(`Taxpayer with PIN ${approval.pin} was not found.`);
-      return;
-    }
-
-    const billing = toTaxBilling(found);
-    setSearchPIN(approval.pin);
-    setSelectedBilling(billing);
-    syncPenaltyFromApproval(billing, approval);
-
-    if (approval.status === "Approved") {
-      setCurrentApprovalStatus("approved");
-      setLinkedApprovalId(approval.id);
-    } else if (approval.status === "Rejected") {
-      setCurrentApprovalStatus("rejected");
-      setLinkedApprovalId(null);
-    } else {
-      setCurrentApprovalStatus("pending");
-      setLinkedApprovalId(null);
-    }
-  };
-
-  const checkApprovalStatus = async (billing: TaxBilling, percentage: number, approvalId?: string) => {
+  const checkApprovalStatus = async (billing: TaxBilling, percentage: number) => {
     const penaltyAmount = calculatePenaltyAmount(billing, percentage);
-    let existingApproval = await getLatestApprovalForPIN(billing.pin, penaltyAmount, approvalId);
-
-    // Form may still show the taxpayer's default % while a different approved amount exists.
-    if (!existingApproval) {
-      const latestApproved = await getLatestApprovedApprovalForPIN(billing.pin);
-      if (latestApproved) {
-        existingApproval = latestApproved;
-        syncPenaltyFromApproval(billing, latestApproved);
-      }
-    }
-
+    const existingApproval = await getLatestApprovalForPIN(billing.pin, penaltyAmount);
     if (existingApproval) {
-      if (existingApproval.status === "Approved") {
-        setCurrentApprovalStatus("approved");
-        setLinkedApprovalId(existingApproval.id);
-      } else if (existingApproval.status === "Rejected") {
-        setCurrentApprovalStatus("rejected");
-        setLinkedApprovalId(null);
-      } else {
-        setCurrentApprovalStatus("pending");
-        setLinkedApprovalId(null);
-      }
+      if (existingApproval.status === "Approved") setCurrentApprovalStatus("approved");
+      else if (existingApproval.status === "Rejected") setCurrentApprovalStatus("rejected");
+      else setCurrentApprovalStatus("pending");
     } else {
       setCurrentApprovalStatus("none");
-      setLinkedApprovalId(null);
-    }
-  };
-
-  useEffect(() => {
-    if (!prefillApprovalId || taxpayers.length === 0) return;
-
-    let cancelled = false;
-
-    const loadFromApproval = async () => {
-      const approval = await getApprovalRequestById(prefillApprovalId);
-      if (cancelled) return;
-
-      if (!approval) {
-        alert("Approval request not found.");
-        onPrefillConsumed?.();
-        return;
-      }
-
-      if (approval.status !== "Approved") {
-        alert("Only approved requests can be opened in Generate SOA.");
-        onPrefillConsumed?.();
-        return;
-      }
-
-      await applyApprovalToForm(approval);
-      onPrefillConsumed?.();
-    };
-
-    void loadFromApproval();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [prefillApprovalId, taxpayers]);
-
-  const refreshApprovalFromServer = async (billing: TaxBilling, approvalId?: string | null) => {
-    if (approvalId) {
-      const byId = await getApprovalRequestById(approvalId);
-      if (byId?.status === "Approved") {
-        syncPenaltyFromApproval(billing, byId);
-        setCurrentApprovalStatus("approved");
-        setLinkedApprovalId(byId.id);
-        return;
-      }
-      if (byId?.status === "Rejected") {
-        setCurrentApprovalStatus("rejected");
-        setLinkedApprovalId(null);
-        return;
-      }
-    }
-
-    const approved = await getLatestApprovedApprovalForPIN(billing.pin);
-    if (approved) {
-      syncPenaltyFromApproval(billing, approved);
-      setCurrentApprovalStatus("approved");
-      setLinkedApprovalId(approved.id);
-      return;
-    }
-
-    const percentage = parseFloat(penaltyPercentage) || 0;
-    if (percentage > 0) {
-      await checkApprovalStatus(billing, percentage, approvalId ?? undefined);
     }
   };
 
   useEffect(() => {
     if (!selectedBilling) return;
     const unsubscribe = subscribeToApprovalUpdates(() => {
-      void refreshApprovalFromServer(selectedBilling, linkedApprovalId);
+      const percentage = parseFloat(penaltyPercentage) || 0;
+      if (percentage > 0) {
+        checkApprovalStatus(selectedBilling, percentage);
+      }
     });
     return unsubscribe;
-  }, [selectedBilling, penaltyPercentage, linkedApprovalId]);
-
-  useEffect(() => {
-    if (currentApprovalStatus !== "pending" || !linkedApprovalId || !selectedBilling) return;
-
-    let cancelled = false;
-
-    const poll = async () => {
-      if (cancelled) return;
-      await refreshApprovalFromServer(selectedBilling, linkedApprovalId);
-    };
-
-    void poll();
-    const interval = setInterval(() => {
-      void poll();
-    }, 3000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [currentApprovalStatus, linkedApprovalId, selectedBilling]);
+  }, [selectedBilling, penaltyPercentage]);
 
   const allTaxpayers: TaxpayerListItem[] = taxpayers.map(t => ({
     pin: t.pin,
@@ -252,32 +105,16 @@ export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: Clerk
     return baseTax * (percentage / 100);
   };
 
-  const loadTaxpayerIntoForm = async (found: Taxpayer) => {
-    const billing = toTaxBilling(found);
-    const approved = await getLatestApprovedApprovalForPIN(found.pin);
-
-    setSelectedBilling(billing);
-
-    if (approved) {
-      syncPenaltyFromApproval(billing, approved);
-      setCurrentApprovalStatus("approved");
-      setLinkedApprovalId(approved.id);
-      return;
-    }
-
-    setPenaltyPercentage(found.penaltyPercentage.toString());
-    setPenaltyReason(found.penaltyReason);
-    await checkApprovalStatus(billing, found.penaltyPercentage);
-    calculateTotal(billing, found.penaltyPercentage.toString());
-    setEarlyPaymentNote(
-      found.penaltyPercentage > 0 ? "" : "Eligible for early payment discount at cashier"
-    );
-  };
-
   const handleSearch = async () => {
     const found = taxpayers.find(t => t.pin === searchPIN);
     if (found) {
-      await loadTaxpayerIntoForm(found);
+      const billing = toTaxBilling(found);
+      setSelectedBilling(billing);
+      setPenaltyPercentage(found.penaltyPercentage.toString());
+      setPenaltyReason(found.penaltyReason);
+      await checkApprovalStatus(billing, found.penaltyPercentage);
+      calculateTotal(billing, found.penaltyPercentage.toString());
+      setEarlyPaymentNote(found.penaltyPercentage > 0 ? "" : "Eligible for early payment discount at cashier");
     } else {
       alert("Property ID not found");
       setSelectedBilling(null);
@@ -288,7 +125,13 @@ export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: Clerk
     setSearchPIN(pin);
     const found = taxpayers.find(t => t.pin === pin);
     if (found) {
-      await loadTaxpayerIntoForm(found);
+      const billing = toTaxBilling(found);
+      setSelectedBilling(billing);
+      setPenaltyPercentage(found.penaltyPercentage.toString());
+      setPenaltyReason(found.penaltyReason);
+      await checkApprovalStatus(billing, found.penaltyPercentage);
+      calculateTotal(billing, found.penaltyPercentage.toString());
+      setEarlyPaymentNote(found.penaltyPercentage > 0 ? "" : "Eligible for early payment discount at cashier");
     }
   };
 
@@ -305,7 +148,6 @@ export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: Clerk
       calculateTotal(selectedBilling, value);
       if (currentApprovalStatus === "approved") {
         setCurrentApprovalStatus("none");
-        setLinkedApprovalId(null);
       }
     }
   };
@@ -340,16 +182,8 @@ export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: Clerk
 
     let approvalRequestId: string | undefined;
     if (percentage > 0 && currentApprovalStatus === "approved") {
-      if (linkedApprovalId) {
-        approvalRequestId = linkedApprovalId;
-      } else {
-        const approval = await getLatestApprovalForPIN(
-          selectedBilling.pin,
-          penaltyAmount,
-          linkedApprovalId ?? undefined
-        );
-        approvalRequestId = approval?.id;
-      }
+      const approval = await getLatestApprovalForPIN(selectedBilling.pin, penaltyAmount);
+      approvalRequestId = approval?.id;
     }
 
     const newSOA = await createSOA(
@@ -393,20 +227,24 @@ export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: Clerk
       return;
     }
 
-    const newRequest = await createApprovalRequest(
-      selectedBilling.pin,
-      selectedBilling.taxpayer,
-      "Penalty Waiver",
-      originalPenaltyAmount,
-      penaltyAmount,
-      penaltyReason,
-      "Ana Lopez (Revenue Clerk)"
-    );
+    try {
+      const newRequest = await createApprovalRequest(
+        selectedBilling.pin,
+        selectedBilling.taxpayer,
+        "Penalty Waiver",
+        originalPenaltyAmount,
+        penaltyAmount,
+        penaltyReason,
+        "Ana Lopez (Revenue Clerk)"
+      );
 
-    setCurrentApprovalStatus("pending");
-    setLinkedApprovalId(newRequest.id);
-    setShowRequestApproval(false);
-    alert(`Approval request ${newRequest.id} submitted to Municipal Treasurer. You will be notified when it's reviewed.`);
+      setCurrentApprovalStatus("pending");
+      setShowRequestApproval(false);
+      alert(`Approval request ${newRequest.id} submitted to Municipal Treasurer. You will be notified when it's reviewed.`);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to submit approval request. Please try again.");
+    }
   };
 
   const filteredTaxpayers = allTaxpayers.filter(tp =>
@@ -430,12 +268,7 @@ export default function ClerkSOA({ prefillApprovalId, onPrefillConsumed }: Clerk
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
             <CheckCircle className="w-5 h-5 text-green-600" />
             <span className="font-['Poppins'] text-[14px] text-green-800">
-              <span className="font-semibold">Treasurer Approved:</span> Penalty of ₱
-              {calculatePenaltyAmount(selectedBilling!, parseFloat(penaltyPercentage) || 0).toLocaleString(
-                "en-PH",
-                { minimumFractionDigits: 2 }
-              )}{" "}
-              applied — you can now send this SOA to the taxpayer
+              <span className="font-semibold">Approved:</span> You can now send this SOA to the taxpayer
             </span>
           </div>
         );
