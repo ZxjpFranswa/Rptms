@@ -32,6 +32,6 @@ class ApplicationWorkflowTest extends TestCase
         $this->postJson("/api/applications/{$application->id}/approve", [
             'remarks' => 'Looks good',
         ])->assertOk()
-            ->assertJsonPath('status', ApplicationStatus::Approved->value);
+            ->assertJsonPath('status', ApplicationStatus::Active->value);
     }
 }

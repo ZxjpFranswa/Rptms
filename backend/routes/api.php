@@ -81,4 +81,66 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('settings', [SettingController::class, 'show']);
         Route::patch('settings', [SettingController::class, 'update']);
     });
+
+    // Billing & Collection Routes
+    Route::prefix('billing')->group(function () {
+        // Search & view dues
+        Route::get('search', [\App\Http\Controllers\Api\BillingController::class, 'search']);
+        Route::get('properties/{taxDeclaration}/dues', [\App\Http\Controllers\Api\BillingController::class, 'propertyDues']);
+        Route::get('bills', [\App\Http\Controllers\Api\BillingController::class, 'listBills']);
+        Route::get('soas', [\App\Http\Controllers\Api\BillingController::class, 'listSoas']);
+        Route::get('soas/{soa}', [\App\Http\Controllers\Api\BillingController::class, 'showSoa']);
+        Route::get('receipts/{payment}', [\App\Http\Controllers\Api\BillingController::class, 'showReceipt']);
+
+        // Revenue Clerk operations
+        Route::post('bills/generate', [\App\Http\Controllers\Api\BillingController::class, 'generateBill'])
+            ->middleware('role:Revenue Clerk,Administrator');
+        Route::post('soas', [\App\Http\Controllers\Api\BillingController::class, 'createSoa'])
+            ->middleware('role:Revenue Clerk');
+        Route::post('soas/{soa}/revise', [\App\Http\Controllers\Api\BillingController::class, 'reviseSoa'])
+            ->middleware('role:Revenue Clerk');
+
+        // Treasurer operations
+        Route::post('soas/{soa}/approve', [\App\Http\Controllers\Api\BillingController::class, 'approveSoa'])
+            ->middleware('role:Treasurer');
+        Route::post('soas/{soa}/deny', [\App\Http\Controllers\Api\BillingController::class, 'denySoa'])
+            ->middleware('role:Treasurer');
+        Route::get('corrections', [\App\Http\Controllers\Api\BillingController::class, 'listCorrections'])
+            ->middleware('role:Treasurer,Cashier');
+        Route::post('corrections/{correctionRequest}/review', [\App\Http\Controllers\Api\BillingController::class, 'reviewCorrection'])
+            ->middleware('role:Treasurer');
+
+        // Cashier operations
+        Route::post('soas/{soa}/preview-payment', [\App\Http\Controllers\Api\BillingController::class, 'previewPayment'])
+            ->middleware('role:Cashier');
+        Route::post('soas/{soa}/pay', [\App\Http\Controllers\Api\BillingController::class, 'recordPayment'])
+            ->middleware('role:Cashier');
+        Route::post('payments/{payment}/correct', [\App\Http\Controllers\Api\BillingController::class, 'requestCorrection'])
+            ->middleware('role:Cashier');
+
+        // Reports
+        Route::get('reports/daily', [\App\Http\Controllers\Api\BillingController::class, 'dailyReport']);
+        Route::get('reports/monthly', [\App\Http\Controllers\Api\BillingController::class, 'monthlyReport']);
+        Route::get('reports/annual', [\App\Http\Controllers\Api\BillingController::class, 'annualReport']);
+        Route::get('reports/by-barangay', [\App\Http\Controllers\Api\BillingController::class, 'collectionByBarangay']);
+        Route::get('reports/by-tax-year', [\App\Http\Controllers\Api\BillingController::class, 'collectionByTaxYear']);
+        Route::get('reports/delinquents', [\App\Http\Controllers\Api\BillingController::class, 'delinquentAccounts']);
+        Route::get('reports/receipt-register', [\App\Http\Controllers\Api\BillingController::class, 'officialReceiptRegister']);
+
+        // Billing Settings
+        Route::get('settings', [\App\Http\Controllers\Api\BillingController::class, 'getSettings']);
+        Route::patch('settings', [\App\Http\Controllers\Api\BillingController::class, 'updateSettings'])
+            ->middleware('role:Administrator');
+    });
+
+    // Taxpayer Portal
+    Route::prefix('portal')->middleware('role:Taxpayer')->group(function () {
+        Route::get('dues', [\App\Http\Controllers\Api\TaxpayerPortalController::class, 'myDues']);
+        Route::get('bills', [\App\Http\Controllers\Api\TaxpayerPortalController::class, 'myBills']);
+        Route::get('soas', [\App\Http\Controllers\Api\TaxpayerPortalController::class, 'mySoas']);
+        Route::get('payments', [\App\Http\Controllers\Api\TaxpayerPortalController::class, 'myPayments']);
+        Route::get('receipts/{payment}', [\App\Http\Controllers\Api\TaxpayerPortalController::class, 'myReceipt']);
+        Route::get('notifications', [\App\Http\Controllers\Api\TaxpayerPortalController::class, 'myNotifications']);
+        Route::post('notifications/{notification}/read', [\App\Http\Controllers\Api\TaxpayerPortalController::class, 'markNotificationRead']);
+    });
 });

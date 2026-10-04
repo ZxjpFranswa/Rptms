@@ -144,6 +144,18 @@ const pageTitle = computed(() => {
     '/admin/users': 'User Management',
     '/admin/settings': 'Settings',
     '/admin/audit-logs': 'Audit Logs',
+    '/revenue/dashboard': 'Revenue Clerk Dashboard',
+    '/revenue/bills': 'Tax Bills Management',
+    '/revenue/soas': 'Statements of Account',
+    '/revenue/delinquents': 'Delinquent Accounts',
+    '/treasurer/dashboard': 'Treasurer Dashboard',
+    '/treasurer/penalty-approvals': 'Penalty Approvals',
+    '/treasurer/correction-approvals': 'Payment Corrections',
+    '/treasurer/reports': 'Collection Reports',
+    '/cashier/dashboard': 'Cashier Terminal',
+    '/cashier/desk': 'Collection Desk',
+    '/cashier/receipts': 'Official Receipts Register',
+    '/taxpayer/portal': 'Taxpayer Portal',
   }
   if (route.name === 'PropertyReview') return 'Application Review'
   if (route.name === 'ClerkPropertyDetail') return 'Property Details'
@@ -158,6 +170,10 @@ const breadcrumbs = computed(() => {
     clerk: 'Assessment Clerk',
     assessor: 'Assessor',
     admin: 'Administrator',
+    revenue: 'Revenue Office',
+    treasurer: 'Municipal Treasury',
+    cashier: 'Cashier Station',
+    taxpayer: 'Taxpayer Portal',
     dashboard: 'Dashboard',
     'new-registration': 'New Registration',
     registrations: 'Properties',
@@ -167,6 +183,15 @@ const breadcrumbs = computed(() => {
     users: 'Users',
     settings: 'Settings',
     'audit-logs': 'Audit Logs',
+    bills: 'Tax Bills',
+    soas: 'Statements of Account',
+    delinquents: 'Delinquent Accounts',
+    'penalty-approvals': 'Penalty Approvals',
+    'correction-approvals': 'Payment Corrections',
+    reports: 'Reports',
+    desk: 'Collection Desk',
+    receipts: 'Official Receipts',
+    portal: 'Portal',
   }
 
   return parts.map((part, i) => {
@@ -181,6 +206,10 @@ const getRoleBadgeColor = (role?: string) => {
     case 'Assessment Clerk': return 'bg-blue-600'
     case 'Municipal Assessor': return 'bg-purple-600'
     case 'Administrator': return 'bg-red-600'
+    case 'Revenue Clerk': return 'bg-amber-600'
+    case 'Treasurer': return 'bg-emerald-600'
+    case 'Cashier': return 'bg-teal-600'
+    case 'Taxpayer': return 'bg-indigo-600'
     default: return 'bg-gray-600'
   }
 }
@@ -190,6 +219,10 @@ const getRoleAbbrev = (role?: string) => {
     case 'Assessment Clerk': return 'AC'
     case 'Municipal Assessor': return 'MA'
     case 'Administrator': return 'AD'
+    case 'Revenue Clerk': return 'RC'
+    case 'Treasurer': return 'TR'
+    case 'Cashier': return 'CS'
+    case 'Taxpayer': return 'TP'
     default: return 'US'
   }
 }

@@ -7,9 +7,17 @@ export interface User {
   id: string
   username: string
   fullName: string
-  role: 'Assessment Clerk' | 'Municipal Assessor' | 'Administrator'
+  role:
+    | 'Assessment Clerk'
+    | 'Municipal Assessor'
+    | 'Administrator'
+    | 'Revenue Clerk'
+    | 'Treasurer'
+    | 'Cashier'
+    | 'Taxpayer'
   email: string
   status: 'active' | 'inactive' | 'locked'
+  taxpayerId?: string | null
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -90,6 +98,14 @@ export const useAuthStore = defineStore('auth', () => {
         return '/assessor/dashboard'
       case 'Administrator':
         return '/admin/dashboard'
+      case 'Revenue Clerk':
+        return '/revenue/dashboard'
+      case 'Treasurer':
+        return '/treasurer/dashboard'
+      case 'Cashier':
+        return '/cashier/dashboard'
+      case 'Taxpayer':
+        return '/taxpayer/portal'
       default:
         return '/login'
     }

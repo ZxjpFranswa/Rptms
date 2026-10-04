@@ -28,4 +28,29 @@ class Taxpayer extends Model
     {
         return $this->hasMany(Application::class);
     }
+
+    public function taxBills(): HasMany
+    {
+        return $this->hasMany(TaxBill::class);
+    }
+
+    public function statementsOfAccount(): HasMany
+    {
+        return $this->hasMany(StatementOfAccount::class);
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    public function user(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(User::class);
+    }
+
+    public function getFullNameAttribute(): string
+    {
+        return trim(preg_replace('/\s+/', ' ', "{$this->first_name} {$this->middle_name} {$this->last_name}"));
+    }
 }

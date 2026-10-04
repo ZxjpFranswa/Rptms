@@ -356,17 +356,18 @@ const statusLabel = computed(() =>
   assessment.value ? assessment.value.status.replace(/([a-z])([A-Z])/g, '$1 $2') : 'Not started',
 )
 
-const statusClass = computed(
-  () =>
-    ({
-      Draft: 'bg-gray-100 text-gray-800',
-      UnderReview: 'bg-blue-100 text-blue-800',
-      Approved: 'bg-green-100 text-green-800',
-      Returned: 'bg-yellow-100 text-yellow-800',
-      Rejected: 'bg-red-100 text-red-800',
-      Authorized: 'bg-emerald-100 text-emerald-800',
-    })[assessment.value?.status ?? ''] ?? 'bg-gray-100 text-gray-600',
-)
+const statusClass = computed(() => {
+  const map: Record<string, string> = {
+    Draft: 'bg-gray-100 text-gray-800',
+    UnderReview: 'bg-blue-100 text-blue-800',
+    Approved: 'bg-green-100 text-green-800',
+    Returned: 'bg-yellow-100 text-yellow-800',
+    Rejected: 'bg-red-100 text-red-800',
+    Authorized: 'bg-emerald-100 text-emerald-800',
+  }
+  const s = assessment.value?.status
+  return (s && map[s]) || 'bg-gray-100 text-gray-600'
+})
 
 const peso = (v: number | string | undefined | null) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(v ?? 0))

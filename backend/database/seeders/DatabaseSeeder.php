@@ -12,6 +12,7 @@ class DatabaseSeeder extends Seeder
             DemoUsersSeeder::class,
             SampleApplicationsSeeder::class,
             AssessmentSeeder::class,
+            BillingSeeder::class,
         ]);
     }
 }

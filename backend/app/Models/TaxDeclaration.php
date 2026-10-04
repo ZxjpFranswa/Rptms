@@ -39,4 +39,19 @@ class TaxDeclaration extends Model
     {
         return $this->belongsTo(Assessment::class);
     }
+
+    public function taxBills(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(TaxBill::class);
+    }
+
+    public function statementsOfAccount(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(StatementOfAccount::class);
+    }
+
+    public function payments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
 }

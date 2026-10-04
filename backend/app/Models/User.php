@@ -25,6 +25,7 @@ class User extends Authenticatable
         'password',
         'full_name',
         'role',
+        'taxpayer_id',
         'status',
         'last_login_at',
     ];
@@ -42,5 +43,10 @@ class User extends Authenticatable
             'role' => UserRole::class,
             'status' => UserStatus::class,
         ];
+    }
+
+    public function taxpayer(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Taxpayer::class);
     }
 }

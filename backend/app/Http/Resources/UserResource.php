@@ -16,6 +16,8 @@ class UserResource extends JsonResource
             'role' => $this->role instanceof \BackedEnum ? $this->role->value : $this->role,
             'email' => $this->email,
             'status' => $this->status instanceof \BackedEnum ? $this->status->value : $this->status,
+            'taxpayerId' => $this->taxpayer_id,
+            'taxpayerName' => $this->taxpayer?->full_name,
             'lastLogin' => $this->last_login_at?->toIso8601String(),
         ];
     }

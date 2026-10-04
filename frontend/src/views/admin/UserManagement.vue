@@ -30,7 +30,11 @@
               <option value="">All Roles</option>
               <option value="Assessment Clerk">Assessment Clerk</option>
               <option value="Municipal Assessor">Municipal Assessor</option>
+              <option value="Revenue Clerk">Revenue Clerk</option>
+              <option value="Treasurer">Treasurer</option>
+              <option value="Cashier">Cashier</option>
               <option value="Administrator">Administrator</option>
+              <option value="Taxpayer">Taxpayer</option>
             </select>
           </div>
           <div>
@@ -97,7 +101,11 @@
             <option value="">Select Role</option>
             <option value="Assessment Clerk">Assessment Clerk</option>
             <option value="Municipal Assessor">Municipal Assessor</option>
+            <option value="Revenue Clerk">Revenue Clerk</option>
+            <option value="Treasurer">Treasurer</option>
+            <option value="Cashier">Cashier</option>
             <option value="Administrator">Administrator</option>
+            <option value="Taxpayer">Taxpayer</option>
           </select>
           <input
             v-model="formData.email"
@@ -324,6 +332,8 @@ const handleUserAction = (action: Action, row: Record<string, unknown>) => {
       role: user.role,
       email: user.email,
       status: user.status,
+      password: '',
+      confirmPassword: '',
     }
     showAddUserModal.value = true
     return

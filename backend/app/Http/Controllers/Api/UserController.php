@@ -32,6 +32,7 @@ class UserController extends Controller
             'password' => Hash::make($data['password'] ?? 'demo'),
             'full_name' => $data['fullName'],
             'role' => $data['role'],
+            'taxpayer_id' => $data['taxpayerId'] ?? null,
             'status' => $data['status'] ?? UserStatus::Active->value,
         ]);
 
@@ -49,6 +50,7 @@ class UserController extends Controller
             'email' => $data['email'] ?? $user->email,
             'full_name' => $data['fullName'] ?? $user->full_name,
             'role' => $data['role'] ?? $user->role,
+            'taxpayer_id' => array_key_exists('taxpayerId', $data) ? $data['taxpayerId'] : $user->taxpayer_id,
             'status' => $data['status'] ?? $user->status,
         ]);
 
@@ -85,6 +87,7 @@ class UserController extends Controller
             'email' => ['required', 'email', Rule::unique('users', 'email')->ignore($userId)],
             'fullName' => ['required', 'string'],
             'role' => ['required', Rule::in(array_column(UserRole::cases(), 'value'))],
+            'taxpayerId' => ['nullable', 'uuid', 'exists:taxpayers,id'],
             'status' => ['sometimes', Rule::in(array_column(UserStatus::cases(), 'value'))],
             'password' => [$userId ? 'nullable' : 'required', 'string', 'min:4'],
         ]);

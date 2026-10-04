@@ -51,6 +51,9 @@ class AssessmentSeeder extends Seeder
         // Seed assessment for sample applications
         $applications = Application::all();
         foreach ($applications as $app) {
+            if ($app->assessment) {
+                continue;
+            }
             $items = [];
             if ($app->property_type === 'Agricultural') {
                 $items[] = [

@@ -54,7 +54,7 @@ onMounted(() => {
 const auditColumns: Column[] = [
   { key: 'user', label: 'User', sortable: true },
   { key: 'action', label: 'Transaction Type', sortable: true },
-  { key: 'timestamp', label: 'Date', type: 'date', sortable: true },
+  { key: 'timestamp', label: 'Date & Time', type: 'datetime', sortable: true },
   { key: 'status', label: 'Status', type: 'status' },
 ]
 

@@ -75,8 +75,11 @@
             >
               {{ formatStatus(String(row[column.key])) }}
             </span>
+            <span v-else-if="column.type === 'datetime'" class="text-gray-700 text-right">
+              {{ formatDateTime(String(row[column.key])) }}
+            </span>
             <span v-else-if="column.type === 'date'" class="text-gray-700 text-right">
-              {{ formatDate(String(row[column.key])) }}
+              {{ column.key === 'timestamp' ? formatDateTime(String(row[column.key])) : formatDate(String(row[column.key])) }}
             </span>
             <span v-else class="text-gray-700 text-right break-words">{{ row[column.key] }}</span>
           </div>
@@ -155,8 +158,11 @@
                 >
                   {{ formatStatus(String(row[column.key])) }}
                 </span>
-                <span v-else-if="column.type === 'date'" class="text-sm text-gray-700">
-                  {{ formatDate(String(row[column.key])) }}
+                <span v-else-if="column.type === 'datetime'" class="text-sm text-gray-700 whitespace-nowrap">
+                  {{ formatDateTime(String(row[column.key])) }}
+                </span>
+                <span v-else-if="column.type === 'date'" class="text-sm text-gray-700 whitespace-nowrap">
+                  {{ column.key === 'timestamp' ? formatDateTime(String(row[column.key])) : formatDate(String(row[column.key])) }}
                 </span>
                 <span v-else class="text-sm text-gray-700">{{ row[column.key] }}</span>
               </td>
@@ -256,7 +262,7 @@ import {
 export interface Column {
   key: string
   label: string
-  type?: 'text' | 'status' | 'date'
+  type?: 'text' | 'status' | 'date' | 'datetime'
   sortable?: boolean
 }
 
@@ -390,6 +396,21 @@ const formatDate = (date: string): string => {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+  })
+}
+
+const formatDateTime = (date: string): string => {
+  if (!date) return '-'
+  const d = new Date(date)
+  if (isNaN(d.getTime())) return date
+  return d.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
   })
 }
 

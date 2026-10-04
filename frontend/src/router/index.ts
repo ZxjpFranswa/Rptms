@@ -70,6 +70,46 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: '/revenue',
+    component: () => import('@/layouts/AppLayout.vue'),
+    meta: { role: ['Revenue Clerk', 'Administrator'], requiresAuth: true },
+    children: [
+      { path: 'dashboard', name: 'RevenueDashboard', component: () => import('@/views/revenue/RevenueDashboard.vue') },
+      { path: 'bills', name: 'RevenueTaxBills', component: () => import('@/views/revenue/TaxBillsView.vue') },
+      { path: 'soas', name: 'RevenueSoas', component: () => import('@/views/revenue/SoaManagementView.vue') },
+      { path: 'delinquents', name: 'RevenueDelinquents', component: () => import('@/views/revenue/DelinquentAccountsView.vue') },
+    ],
+  },
+  {
+    path: '/treasurer',
+    component: () => import('@/layouts/AppLayout.vue'),
+    meta: { role: ['Treasurer', 'Administrator'], requiresAuth: true },
+    children: [
+      { path: 'dashboard', name: 'TreasurerDashboard', component: () => import('@/views/treasurer/TreasurerDashboard.vue') },
+      { path: 'penalty-approvals', name: 'PenaltyApprovals', component: () => import('@/views/treasurer/PenaltyApprovalsView.vue') },
+      { path: 'correction-approvals', name: 'CorrectionApprovals', component: () => import('@/views/treasurer/CorrectionApprovalsView.vue') },
+      { path: 'reports', name: 'CollectionReports', component: () => import('@/views/treasurer/CollectionReportsView.vue') },
+    ],
+  },
+  {
+    path: '/cashier',
+    component: () => import('@/layouts/AppLayout.vue'),
+    meta: { role: ['Cashier', 'Administrator'], requiresAuth: true },
+    children: [
+      { path: 'dashboard', name: 'CashierDashboard', component: () => import('@/views/cashier/CashierDashboard.vue') },
+      { path: 'desk', name: 'CashierDesk', component: () => import('@/views/cashier/CashierCollectionDesk.vue') },
+      { path: 'receipts', name: 'OfficialReceipts', component: () => import('@/views/cashier/OfficialReceiptsView.vue') },
+    ],
+  },
+  {
+    path: '/taxpayer',
+    component: () => import('@/layouts/AppLayout.vue'),
+    meta: { role: ['Taxpayer', 'Administrator'], requiresAuth: true },
+    children: [
+      { path: 'portal', name: 'TaxpayerPortal', component: () => import('@/views/taxpayer/TaxpayerPortalView.vue') },
+    ],
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: PlaceholderView,
