@@ -45,6 +45,12 @@ class UserController extends Controller
     {
         $data = $this->validatedUser($request, $user->id);
 
+        if ($user->role === UserRole::Taxpayer && (! empty($data['password']) || ($data['username'] ?? '') !== $user->username)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'role' => ['Taxpayer account credentials cannot be altered by administrative staff. Taxpayers manage their credentials directly in the Taxpayer Portal.'],
+            ]);
+        }
+
         $user->fill([
             'username' => $data['username'] ?? $user->username,
             'email' => $data['email'] ?? $user->email,
@@ -63,6 +69,41 @@ class UserController extends Controller
         $this->audit->log($request->user(), 'Updated User', $user->username, $user->username);
 
         return response()->json(new UserResource($user));
+    }
+
+    public function resetPassword(Request $request, User $user): JsonResponse
+    {
+        if ($user->role === UserRole::Taxpayer) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'role' => ['Taxpayer credentials cannot be reset by administrative staff. Taxpayers manage their credentials directly in the Taxpayer Portal.'],
+            ]);
+        }
+
+        $data = $request->validate([
+            'username' => ['sometimes', 'required', 'string', 'max:50', Rule::unique('users', 'username')->ignore($user->id)],
+            'password' => ['required', 'string', 'min:6'],
+        ]);
+
+        if (! empty($data['username']) && $data['username'] !== $user->username) {
+            $previousUsername = $user->username;
+            $user->username = $data['username'];
+            $this->audit->log($request->user(), 'Updated Staff Username', $previousUsername, $user->username);
+        }
+
+        $user->password = Hash::make($data['password']);
+        $user->save();
+
+        $this->audit->log(
+            $request->user(),
+            'Reset Staff Password',
+            $user->username,
+            "Password reset by administrator for staff member {$user->full_name} ({$user->role->value})"
+        );
+
+        return response()->json([
+            'message' => "Credentials for {$user->full_name} ({$user->username}) updated successfully.",
+            'user' => new UserResource($user),
+        ]);
     }
 
     public function updateStatus(Request $request, User $user): JsonResponse

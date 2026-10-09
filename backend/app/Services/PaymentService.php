@@ -26,6 +26,7 @@ class PaymentService
         private readonly BillingSettingsService $settings,
         private readonly TaxComputationService $calculator,
         private readonly AuditService $audit,
+        private readonly NotificationService $notifications,
     ) {}
 
     /**
@@ -263,6 +264,15 @@ class PaymentService
 
             $this->notifyPayment($payment);
 
+            // Notify Revenue Clerks of new posted collection
+            $this->notifications->notifyRole(
+                \App\Enums\UserRole::RevenueClerk,
+                'New Tax Collection Recorded',
+                "Cashier {$cashier->full_name} posted payment of PHP " . number_format($payment->amount_paid, 2) . " under OR {$payment->or_number} for {$payment->payor_name}.",
+                'payment_posted',
+                '/revenue/bills'
+            );
+
             return $payment->fresh(['allocations.installment.taxBill', 'cashier', 'taxDeclaration', 'statementOfAccount']);
         });
     }
@@ -294,6 +304,15 @@ class PaymentService
         ]);
 
         $this->audit->log($cashier, 'Requested Payment Correction', $payment->or_number, $reason);
+
+        // Notify Treasurers of pending payment cancellation request
+        $this->notifications->notifyRole(
+            \App\Enums\UserRole::Treasurer,
+            'Payment Cancellation Requested',
+            "Cashier {$cashier->full_name} requested cancellation for OR {$payment->or_number} (Amount: PHP " . number_format($payment->amount_paid, 2) . "). Reason: {$reason}",
+            'correction_pending',
+            '/treasurer/correction-approvals'
+        );
 
         return $req->fresh(['payment', 'requester']);
     }
@@ -344,6 +363,24 @@ class PaymentService
                 }
 
                 $this->audit->log($treasurer, 'Approved Payment Cancellation', $payment->or_number, 'Cancelled');
+
+                // Notify the Cashier who submitted the request
+                $this->notifications->notifyUser(
+                    $correctionRequest->requested_by,
+                    'Payment Cancellation Approved',
+                    "Treasurer approved your cancellation request for OR {$payment->or_number}.",
+                    'correction_approved',
+                    '/cashier/receipts'
+                );
+
+                // Notify Taxpayer
+                $this->notifications->notifyTaxpayer(
+                    $payment->taxpayer_id,
+                    'Official Receipt Cancelled',
+                    "Payment receipt OR {$payment->or_number} was officially cancelled by the Municipal Treasurer.",
+                    'payment_cancelled',
+                    '/taxpayer/portal'
+                );
             } else {
                 $correctionRequest->status = CorrectionStatus::Denied;
                 $correctionRequest->reviewed_by = $treasurer->id;
@@ -352,6 +389,15 @@ class PaymentService
                 $correctionRequest->save();
 
                 $this->audit->log($treasurer, 'Denied Payment Cancellation', $payment->or_number, "Denied: {$remarks}");
+
+                // Notify the Cashier who submitted the request
+                $this->notifications->notifyUser(
+                    $correctionRequest->requested_by,
+                    'Payment Cancellation Rejected',
+                    "Treasurer denied your cancellation request for OR {$payment->or_number}. Reason: {$remarks}",
+                    'correction_denied',
+                    '/cashier/receipts'
+                );
             }
 
             return $correctionRequest->fresh(['payment', 'requester', 'reviewer']);
@@ -387,6 +433,14 @@ class PaymentService
             'subject' => $subject,
             'message' => $message,
         ]);
+
+        $this->notifications->notifyTaxpayer(
+            $taxpayer?->id,
+            "Payment Confirmed - OR {$payment->or_number}",
+            "Official Receipt {$payment->or_number} posted for PHP " . number_format((float) $payment->amount_paid, 2) . ". Remaining balance: PHP " . number_format((float) $payment->balance_after, 2),
+            'payment_received',
+            '/taxpayer/portal'
+        );
 
         if ($recipientEmail) {
             try {

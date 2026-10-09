@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-screen bg-gray-100 overflow-hidden">
+  <div class="flex h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-hidden transition-colors">
 
     <!-- Mobile backdrop overlay -->
     <Transition name="fade">
@@ -28,7 +28,7 @@
     <!-- Main Content -->
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
       <Header />
-      <main class="flex-1 overflow-y-auto bg-gray-100">
+      <main class="flex-1 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors">
         <router-view />
       </main>
     </div>

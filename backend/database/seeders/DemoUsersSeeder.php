@@ -39,7 +39,8 @@ class DemoUsersSeeder extends Seeder
         }
 
         $tpUser = User::where('username', 'taxpayer')->first();
-        $taxpayer = \App\Models\Taxpayer::first();
+        $taxpayer = \App\Models\Taxpayer::where('first_name', 'Maria')->where('last_name', 'Santos')->first()
+            ?? \App\Models\Taxpayer::where('email', 'taxpayer@magarao.gov')->first();
         if ($tpUser && $taxpayer) {
             $tpUser->taxpayer_id = $taxpayer->id;
             $tpUser->save();

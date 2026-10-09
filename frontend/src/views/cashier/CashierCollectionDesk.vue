@@ -16,60 +16,161 @@
       </div>
     </div>
 
-    <!-- Step 1: Search Taxpayer / Property -->
+    <!-- Step 1: Search & Select Taxpayer / Property -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-4">
-      <h3 class="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-        <span class="w-6 h-6 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold">1</span>
-        Search Property / Tax Declaration / SOA Number
-      </h3>
-
-      <div class="relative">
-        <input
-          v-model="searchQuery"
-          @input="handleSearchInput"
-          type="text"
-          placeholder="Search by TD Number (e.g. 2026-001-00001), Owner Name, or PIN..."
-          class="w-full px-4 py-3 text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none"
-        />
-        <div v-if="searching" class="absolute right-4 top-3.5">
-          <svg class="animate-spin h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-          </svg>
-        </div>
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-3">
+        <h3 class="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold">1</span>
+          Taxpayer Directory & Property Search
+        </h3>
+        <span class="text-xs text-primary-700 bg-primary-50 px-2.5 py-1 rounded-full font-semibold">
+          Alphabetical Order (A-Z) &bull; {{ allTaxpayers.length }} Registered Taxpayers
+        </span>
       </div>
 
-      <!-- Search Results Dropdown -->
-      <div
-        v-if="searchResults.length > 0"
-        class="border border-gray-200 rounded-xl max-h-60 overflow-y-auto divide-y divide-gray-100 bg-white shadow-lg"
-      >
-        <div
-          v-for="res in searchResults"
-          :key="res.tax_declaration_id"
-          @click="selectProperty(res)"
-          class="p-3 hover:bg-primary-50 cursor-pointer transition flex items-center justify-between"
-        >
+      <!-- If a property is currently selected, show selected summary card -->
+      <div v-if="selectedProperty" class="bg-primary-50/70 border border-primary-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-primary-700 text-white flex items-center justify-center font-bold text-sm">
+            {{ selectedProperty.owner_name?.slice(0, 2).toUpperCase() }}
+          </div>
           <div>
             <div class="flex items-center gap-2">
-              <span class="font-mono font-bold text-primary-800 text-sm">{{ res.td_number }}</span>
-              <span class="font-semibold text-gray-900 text-sm">&bull; {{ res.owner_name }}</span>
+              <span class="font-bold text-gray-900 text-sm">{{ selectedProperty.owner_name }}</span>
+              <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded">Selected</span>
             </div>
-            <p class="text-xs text-gray-500 mt-0.5">
-              Brgy. {{ res.barangay }} | Assessed Value: ₱{{ formatCurrency(res.total_assessed_value) }}
-              <span v-if="res.pin" class="font-mono ml-1 text-gray-400">| PIN: {{ res.pin }}</span>
+            <p class="text-xs text-gray-600 mt-0.5">
+              TD: <strong class="font-mono text-primary-800">{{ selectedProperty.td_number }}</strong> &bull; Brgy. {{ selectedProperty.barangay }}
+              <span v-if="selectedProperty.pin" class="font-mono text-gray-500"> &bull; PIN: {{ selectedProperty.pin }}</span>
             </p>
           </div>
-          <div class="text-right">
-            <span class="block text-xs font-semibold" :class="res.outstanding_principal > 0 ? 'text-amber-700' : 'text-emerald-700'">
-              {{ res.outstanding_principal > 0 ? `Bal: ₱${formatCurrency(res.outstanding_principal)}` : 'Fully Paid' }}
-            </span>
-            <span
-              v-if="res.active_soa"
-              class="inline-block mt-0.5 px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded"
+        </div>
+        <button
+          @click="clearSelectedProperty"
+          class="px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:text-red-700 bg-white hover:bg-red-50 border border-gray-300 hover:border-red-300 rounded-lg transition self-start sm:self-auto"
+        >
+          &larr; Change Taxpayer
+        </button>
+      </div>
+
+      <!-- Otherwise, show search bar + alphabetical table -->
+      <div v-else class="space-y-4">
+        <!-- Search & Filter Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="md:col-span-2 relative">
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search by Taxpayer Name, TD Number, PIN, or Barangay..."
+              class="w-full pl-10 pr-10 py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none"
+            />
+            <svg class="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <button
+              v-if="searchQuery"
+              @click="searchQuery = ''"
+              class="absolute right-3.5 top-3 text-gray-400 hover:text-gray-600 text-xs font-bold"
+              title="Clear search"
             >
-              Active SOA: {{ res.active_soa.soa_no }}
-            </span>
+              ✕
+            </button>
+          </div>
+          <div>
+            <select
+              v-model="selectedBarangay"
+              class="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none"
+            >
+              <option value="">All Barangays</option>
+              <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Pre-existing Alphabetical Taxpayers Table -->
+        <div class="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+          <div v-if="loadingTaxpayers" class="p-8 text-center text-gray-500">
+            <svg class="animate-spin h-6 w-6 mx-auto text-primary-600 mb-2" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            Loading alphabetical taxpayer directory...
+          </div>
+
+          <div v-else-if="filteredTaxpayers.length === 0" class="p-8 text-center text-gray-500 text-xs">
+            No taxpayers found matching your search. Try adjusting the search term or barangay filter.
+          </div>
+
+          <div v-else class="overflow-x-auto max-h-96 overflow-y-auto">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead class="bg-gray-50 text-gray-600 uppercase font-semibold text-[11px] sticky top-0 z-10 border-b border-gray-200">
+                <tr>
+                  <th class="py-3 px-4">Taxpayer / Owner</th>
+                  <th class="py-3 px-4">Tax Declaration No.</th>
+                  <th class="py-3 px-4">Barangay</th>
+                  <th class="py-3 px-4 text-right">Assessed Value</th>
+                  <th class="py-3 px-4 text-right">Outstanding Principal</th>
+                  <th class="py-3 px-4 text-center">SOA Status</th>
+                  <th class="py-3 px-4 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                <tr
+                  v-for="taxpayer in filteredTaxpayers"
+                  :key="taxpayer.tax_declaration_id"
+                  @click="selectProperty(taxpayer)"
+                  class="hover:bg-primary-50/60 cursor-pointer transition"
+                >
+                  <td class="py-3 px-4">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-7 h-7 rounded-full bg-primary-100 text-primary-800 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                        {{ taxpayer.owner_name?.charAt(0).toUpperCase() }}
+                      </div>
+                      <div>
+                        <strong class="text-gray-900 block text-xs">{{ taxpayer.owner_name }}</strong>
+                        <span v-if="taxpayer.taxpayer_contact" class="text-[11px] text-gray-500">{{ taxpayer.taxpayer_contact }}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="py-3 px-4 font-mono font-medium text-gray-800">
+                    <div>{{ taxpayer.td_number }}</div>
+                    <div v-if="taxpayer.pin" class="text-[10px] text-gray-400 font-mono">PIN: {{ taxpayer.pin }}</div>
+                  </td>
+                  <td class="py-3 px-4 text-gray-600">{{ taxpayer.barangay }}</td>
+                  <td class="py-3 px-4 text-right font-medium text-gray-800">
+                    ₱{{ formatCurrency(taxpayer.total_assessed_value) }}
+                  </td>
+                  <td class="py-3 px-4 text-right font-medium">
+                    <span :class="taxpayer.outstanding_principal > 0 ? 'text-amber-700 font-bold' : 'text-emerald-700 font-semibold'">
+                      ₱{{ formatCurrency(taxpayer.outstanding_principal) }}
+                    </span>
+                  </td>
+                  <td class="py-3 px-4 text-center">
+                    <span
+                      v-if="taxpayer.active_soa"
+                      :class="[
+                        'px-2 py-0.5 rounded text-[10px] font-bold uppercase',
+                        taxpayer.active_soa.status === 'Issued' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                      ]"
+                    >
+                      SOA: {{ taxpayer.active_soa.soa_no }} ({{ taxpayer.active_soa.status }})
+                    </span>
+                    <span v-else class="text-gray-400 text-[11px]">
+                      None
+                    </span>
+                  </td>
+                  <td class="py-3 px-4 text-center">
+                    <button
+                      type="button"
+                      @click.stop="selectProperty(taxpayer)"
+                      class="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-xs rounded-lg transition shadow-sm"
+                    >
+                      Select &bull; Transact
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -386,7 +487,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   searchPropertiesForBilling,
   previewPaymentApi,
@@ -404,6 +505,56 @@ import SoaDocumentModal from '@/components/billing/SoaDocumentModal.vue'
 const searchQuery = ref('')
 const searching = ref(false)
 const searchResults = ref<PropertySearchResult[]>([])
+
+// Preexisting Alphabetical Taxpayers Directory
+const allTaxpayers = ref<PropertySearchResult[]>([])
+const loadingTaxpayers = ref(false)
+const selectedBarangay = ref('')
+
+const barangaysList = [
+  'Barangay Poblacion',
+  'Barangay San Isidro',
+  'Barangay Malobago',
+  'Barangay Oas',
+  'Barangay Tumaring',
+  'Barangay Bagtasin',
+  'Barangay San Pedro',
+  'Barangay Santa Lucia',
+]
+
+const loadAlphabeticalTaxpayers = async () => {
+  loadingTaxpayers.value = true
+  try {
+    const list = await searchPropertiesForBilling('')
+    allTaxpayers.value = list
+  } catch (err) {
+    console.error('Failed to load taxpayers:', err)
+  } finally {
+    loadingTaxpayers.value = false
+  }
+}
+
+const filteredTaxpayers = computed(() => {
+  let list = allTaxpayers.value
+  if (selectedBarangay.value) {
+    const cleanB = selectedBarangay.value.replace('Barangay ', '').toLowerCase()
+    list = list.filter(p => p.barangay?.toLowerCase().includes(cleanB))
+  }
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.toLowerCase().trim()
+    list = list.filter(p =>
+      p.owner_name?.toLowerCase().includes(q) ||
+      p.td_number?.toLowerCase().includes(q) ||
+      (p.pin && p.pin.toLowerCase().includes(q)) ||
+      p.barangay?.toLowerCase().includes(q)
+    )
+  }
+  return list
+})
+
+onMounted(() => {
+  loadAlphabeticalTaxpayers()
+})
 
 const selectedProperty = ref<PropertySearchResult | null>(null)
 const activeSoa = ref<StatementOfAccountData | null>(null)
@@ -483,6 +634,7 @@ const clearSelectedProperty = () => {
   previewData.value = null
   searchQuery.value = ''
   amountTendered.value = null
+  loadAlphabeticalTaxpayers()
 }
 
 const generateQuickSoa = async () => {

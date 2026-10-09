@@ -27,3 +27,15 @@ export async function updateUserStatusApi(
   const { data } = await useApi().patch<SystemUser>(`${endpoints.users}/${id}/status`, { status })
   return data
 }
+
+export async function resetStaffPasswordApi(
+  id: string,
+  payload: { password: string; username?: string },
+): Promise<{ message: string; user: SystemUser }> {
+  const { data } = await useApi().post<{ message: string; user: SystemUser }>(
+    `${endpoints.users}/${id}/reset-password`,
+    payload,
+  )
+  return data
+}
+

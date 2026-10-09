@@ -50,7 +50,8 @@ class BillingController extends Controller
                         ->orWhereHas('assessment.application.propertyDetail', fn ($p) => $p->where('pin', 'like', "%{$query}%"));
                 });
             })
-            ->limit(25)
+            ->orderBy('owner_name', 'asc')
+            ->limit(100)
             ->get();
 
         $results = $tds->map(function (TaxDeclaration $td) {
@@ -498,10 +499,18 @@ class BillingController extends Controller
             'advanceDiscountPct' => ['sometimes', 'numeric', 'min:0', 'max:50'],
             'promptDiscountPct' => ['sometimes', 'numeric', 'min:0', 'max:50'],
             'quarterDueDates' => ['sometimes', 'array'],
+            'orPrefix' => ['sometimes', 'string'],
+            'soaPrefix' => ['sometimes', 'string'],
+            'billPrefix' => ['sometimes', 'string'],
+            'billOrOrdinanceName' => ['nullable', 'string', 'max:255'],
+            'changeNote' => ['nullable', 'string', 'max:1000'],
+            'changedAt' => ['nullable', 'string'],
         ]);
 
-        $updated = $this->settingsService->update($data);
-        $this->audit->log($request->user(), 'Updated Billing Settings', '-', json_encode($data));
+        $updated = $this->settingsService->update($data, $request->user());
+        $billDesc = $data['billOrOrdinanceName'] ?? 'Statutory Update';
+        $noteDesc = $data['changeNote'] ?? 'Rates calibrated';
+        $this->audit->log($request->user(), 'Updated Statutory Billing Settings', $billDesc, "Bill/Ordinance: {$billDesc} | Note: {$noteDesc}");
 
         return response()->json($updated);
     }

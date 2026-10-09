@@ -41,6 +41,11 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('auth_user')
   }
 
+  const updateUser = (user: User) => {
+    currentUser.value = user
+    localStorage.setItem('auth_user', JSON.stringify(user))
+  }
+
   const login = async (username: string, password: string) => {
     loading.value = true
     try {
@@ -118,6 +123,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     login,
     logout,
+    updateUser,
     initializeAuth,
     clearSession,
     dashboardPath,

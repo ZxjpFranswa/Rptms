@@ -200,6 +200,20 @@ export interface PaymentCorrectionRequestData {
   reviewer?: { full_name: string }
 }
 
+export interface StatutoryRateRevision {
+  billOrOrdinanceName: string
+  changeNote: string
+  changedAt: string
+  changedBy: string
+  basicRatePct: number
+  sefRatePct: number
+  monthlyPenaltyPct: number
+  maxPenaltyMonths: number
+  advanceDiscountPct: number
+  promptDiscountPct: number
+  recordedAt?: string
+}
+
 export interface BillingSettingsData {
   basicRatePct: number
   sefRatePct: number
@@ -211,6 +225,11 @@ export interface BillingSettingsData {
   orPrefix: string
   soaPrefix: string
   billPrefix: string
+  billOrOrdinanceName?: string
+  changeNote?: string
+  changedAt?: string
+  changedBy?: string
+  changeHistory?: StatutoryRateRevision[]
 }
 
 // ================= API CALLS =================

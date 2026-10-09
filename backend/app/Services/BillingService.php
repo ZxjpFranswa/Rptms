@@ -24,6 +24,7 @@ class BillingService
         private readonly BillingSettingsService $settings,
         private readonly TaxComputationService $calculator,
         private readonly AuditService $audit,
+        private readonly NotificationService $notifications,
     ) {}
 
     /**
@@ -99,6 +100,15 @@ class BillingService
             }
 
             $this->audit->log($user, 'Generated Tax Bill', '-', $bill->bill_no);
+
+            // Notify Taxpayer of newly generated annual bill
+            $this->notifications->notifyTaxpayer(
+                $taxpayer?->id,
+                "New Property Tax Bill Generated ({$taxableYear})",
+                "Annual real property tax bill {$bill->bill_no} for Year {$taxableYear} on TD {$td->td_number} has been assessed. Total annual tax: PHP " . number_format($computed['total_tax'], 2),
+                'bill_generated',
+                '/taxpayer/portal'
+            );
 
             return $bill->fresh(['installments']);
         });
@@ -272,6 +282,15 @@ class BillingService
 
             if ($soa->status === SoaStatus::Issued) {
                 $this->notifyTaxpayer($soa);
+            } else {
+                // Notify Treasurer when an SOA has penalties and needs review
+                $this->notifications->notifyRole(
+                    \App\Enums\UserRole::Treasurer,
+                    'New SOA Pending Approval',
+                    "Revenue Clerk {$user->full_name} generated SOA {$soaNo} for {$td->owner_name} with overdue penalties totaling PHP " . number_format($adjustedPenaltyTotal, 2) . ". Approval required before collection.",
+                    'soa_pending',
+                    '/treasurer/penalty-approvals'
+                );
             }
 
             return $soa->fresh(['items', 'taxpayer', 'taxDeclaration']);
@@ -300,6 +319,15 @@ class BillingService
             $this->audit->log($treasurer, 'Approved SOA Penalties', $soa->soa_no, 'Issued');
             $this->notifyTaxpayer($soa);
 
+            // Notify the Revenue Clerk who prepared this SOA
+            $this->notifications->notifyUser(
+                $soa->prepared_by,
+                'SOA Approved by Treasurer',
+                "Treasurer approved Statement of Account {$soa->soa_no} for {$soa->owner_name}. It is now officially issued for payment.",
+                'soa_approved',
+                '/revenue/soas'
+            );
+
             return $soa->fresh(['items', 'taxpayer', 'reviewer']);
         });
     }
@@ -323,6 +351,15 @@ class BillingService
             $soa->save();
 
             $this->audit->log($treasurer, 'Denied SOA Penalties', $soa->soa_no, "Denied: {$reason}");
+
+            // Notify the Revenue Clerk who prepared this SOA
+            $this->notifications->notifyUser(
+                $soa->prepared_by,
+                'SOA Denied by Treasurer',
+                "Treasurer denied Statement of Account {$soa->soa_no} for {$soa->owner_name}. Reason: {$reason}",
+                'soa_denied',
+                '/revenue/soas'
+            );
 
             return $soa->fresh(['items', 'taxpayer', 'reviewer']);
         });
@@ -387,6 +424,14 @@ class BillingService
             'subject' => $subject,
             'message' => $message,
         ]);
+
+        $this->notifications->notifyTaxpayer(
+            $taxpayer?->id,
+            "Statement of Account Issued: {$soa->soa_no}",
+            "SOA {$soa->soa_no} issued for TD {$soa->td_number} (Brgy. {$soa->barangay}). Total Amount Due: PHP " . number_format((float) $soa->total_amount_due, 2),
+            'soa_issued',
+            '/taxpayer/portal'
+        );
 
         $soa->update(['notified_at' => now()]);
 

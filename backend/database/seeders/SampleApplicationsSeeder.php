@@ -80,6 +80,41 @@ class SampleApplicationsSeeder extends Seeder
                 );
             }
 
+            if ($row['intake_ref'] === 'INT-2024-002') {
+                $maria = Taxpayer::updateOrCreate(
+                    ['email' => 'taxpayer@magarao.gov'],
+                    [
+                        'last_name' => 'Santos',
+                        'first_name' => 'Maria',
+                        'middle_name' => null,
+                        'tin' => '222-333-444-555',
+                        'address' => 'San Isidro, Magarao, Camarines Sur',
+                        'contact' => '+63 918 555 0202',
+                    ],
+                );
+                $application->taxpayer_id = $maria->id;
+                $application->save();
+
+                ApplicationPropertyDetail::updateOrCreate(
+                    ['application_id' => $application->id],
+                    ['pin' => '010-02-0001-000-00', 'arp_number' => '010-02-0001', 'land_classification' => 'Commercial', 'actual_use' => 'Commercial', 'total_area' => 450, 'survey_number' => 'SUR-2023-012'],
+                );
+                ApplicationLocation::updateOrCreate(
+                    ['application_id' => $application->id],
+                    ['street' => 'Commercial Center', 'barangay' => 'San Isidro', 'municipality' => 'Magarao', 'province' => 'Camarines Sur', 'zip' => '4404'],
+                );
+                ApplicationTechnicalData::updateOrCreate(
+                    ['application_id' => $application->id],
+                    ['north_boundary' => 'Main Road', 'south_boundary' => 'Lot 5', 'east_boundary' => 'Lot 6', 'west_boundary' => 'Lot 4', 'area_measurement' => '450', 'survey_reference' => 'SGO-2023-012', 'building_type' => 'Concrete', 'floors' => '2', 'building_area' => '200'],
+                );
+
+                $tpUser = User::where('username', 'taxpayer')->first();
+                if ($tpUser) {
+                    $tpUser->taxpayer_id = $maria->id;
+                    $tpUser->save();
+                }
+            }
+
             foreach (['Title', 'Tax Declaration', 'Survey Plan', 'Building Permit', 'Government ID', 'Deed of Sale', 'Affidavit', 'Exemption Document'] as $type) {
                 ApplicationDocument::updateOrCreate(
                     ['application_id' => $application->id, 'type' => $type],

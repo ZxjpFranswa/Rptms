@@ -20,3 +20,20 @@ export async function meApi(): Promise<User> {
   const { data } = await useApi().get<{ user: User }>(endpoints.auth.me)
   return data.user
 }
+
+export interface UpdateProfilePayload {
+  username?: string
+  current_password?: string
+  new_password?: string
+}
+
+export interface UpdateProfileResponse {
+  message: string
+  user: User
+}
+
+export async function updateProfileApi(payload: UpdateProfilePayload): Promise<UpdateProfileResponse> {
+  const { data } = await useApi().patch<UpdateProfileResponse>(endpoints.auth.profile, payload)
+  return data
+}
+

@@ -15,10 +15,16 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::get('me', [AuthController::class, 'me']);
+        Route::patch('profile', [AuthController::class, 'updateProfile']);
     });
 });
 
 Route::middleware('auth:sanctum')->group(function () {
+    // Global User Notifications (All roles)
+    Route::get('notifications', [\App\Http\Controllers\Api\NotificationController::class, 'index']);
+    Route::post('notifications/{notification}/read', [\App\Http\Controllers\Api\NotificationController::class, 'markAsRead']);
+    Route::post('notifications/read-all', [\App\Http\Controllers\Api\NotificationController::class, 'markAllRead']);
+
     Route::get('reviews', [ApplicationController::class, 'reviews'])->name('reviews.index');
 
     Route::get('applications', [ApplicationController::class, 'index']);
@@ -77,6 +83,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('users', [UserController::class, 'store']);
         Route::patch('users/{user}', [UserController::class, 'update']);
         Route::patch('users/{user}/status', [UserController::class, 'updateStatus']);
+        Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword']);
         Route::get('audit-logs', [AuditLogController::class, 'index']);
         Route::get('settings', [SettingController::class, 'show']);
         Route::patch('settings', [SettingController::class, 'update']);

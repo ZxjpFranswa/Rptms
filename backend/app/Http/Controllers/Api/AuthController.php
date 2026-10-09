@@ -57,4 +57,35 @@ class AuthController extends Controller
             'user' => new UserResource($request->user()),
         ]);
     }
+
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'username' => ['sometimes', 'required', 'string', 'max:50', \Illuminate\Validation\Rule::unique('users')->ignore($user->id)],
+            'current_password' => ['nullable', 'string'],
+            'new_password' => ['nullable', 'string', 'min:6'],
+        ]);
+
+        if (! empty($data['new_password'])) {
+            if (empty($data['current_password']) || ! Hash::check($data['current_password'], $user->password)) {
+                throw ValidationException::withMessages([
+                    'current_password' => ['The current password provided is incorrect.'],
+                ]);
+            }
+            $user->password = Hash::make($data['new_password']);
+        }
+
+        if (! empty($data['username']) && $data['username'] !== $user->username) {
+            $user->username = $data['username'];
+        }
+
+        $user->save();
+
+        return response()->json([
+            'message' => 'Credentials updated successfully.',
+            'user' => new UserResource($user),
+        ]);
+    }
 }
