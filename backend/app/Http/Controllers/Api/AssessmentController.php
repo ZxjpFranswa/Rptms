@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Application;
 use App\Models\Assessment;
+use App\Models\Reassessment;
 use App\Models\SmvUnitValue;
 use App\Services\AppraisalCalculationService;
 use App\Services\AssessmentWorkflowService;
@@ -124,6 +125,9 @@ class AssessmentController extends Controller
         $data = $request->validate([
             'barangay' => ['nullable', 'string'],
             'is_taxable' => ['nullable', 'boolean'],
+            'annual_tax_increase_pct' => ['nullable', 'numeric'],
+            'annual_tax_increase_enabled' => ['nullable', 'boolean'],
+            'effective_year' => ['nullable', 'integer'],
             'items' => ['required', 'array'],
             'items.*.item_type' => ['required', 'string'],
             'items.*.classification' => ['required', 'string'],
@@ -137,7 +141,12 @@ class AssessmentController extends Controller
 
         $barangay = $data['barangay'] ?? '';
         $isTaxable = $data['is_taxable'] ?? true;
-        $calculated = $this->calculator->computeTotals($data['items'], $isTaxable);
+        $calculated = $this->calculator->computeTotals($data['items'], $isTaxable, [
+            'barangay' => $barangay,
+            'annual_tax_increase_pct' => (float) ($data['annual_tax_increase_pct'] ?? 0),
+            'annual_tax_increase_enabled' => (bool) ($data['annual_tax_increase_enabled'] ?? false),
+            'effective_year' => (int) ($data['effective_year'] ?? date('Y')),
+        ]);
 
         return response()->json($calculated);
     }
@@ -162,19 +171,79 @@ class AssessmentController extends Controller
     }
 
     /**
-     * Get assessment for a given application.
+     * Fetch the schedule of values for Plants and Trees.
+     */
+    public function plantsSchedule(): JsonResponse
+    {
+        return response()->json(AppraisalCalculationService::getPlantSchedule());
+    }
+
+    /**
+     * Automatic lookup of plant/tree unit price value by species and age.
+     */
+    public function lookupPlantValue(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'species' => ['required', 'string'],
+            'age' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $pricing = $this->calculator->getPlantUnitValue($data['species'], (float) ($data['age'] ?? 0));
+
+        return response()->json($pricing);
+    }
+
+    /**
+     * Get assessment for a given application with full valuation summary.
      */
     public function show(Application $application): JsonResponse
     {
         $assessment = $application->assessment()
-            ->with(['items', 'taxDeclaration', 'statusHistories.actor', 'creator', 'reviewer', 'authorizer'])
+            ->with([
+                'items',
+                'taxDeclaration',
+                'statusHistories.actor',
+                'creator',
+                'reviewer',
+                'authorizer',
+                'reassessments.creator:id,full_name',
+                'reassessments.approver:id,full_name',
+            ])
             ->first();
 
         if (!$assessment) {
             return response()->json(['message' => 'No assessment record found.'], 404);
         }
 
-        return response()->json($assessment);
+        // Generate automatic valuation summary, tax calculations, and annual projections
+        $itemsArray = $assessment->items->map(fn ($i) => [
+            'item_type' => $i->item_type,
+            'classification' => $i->classification,
+            'actual_use' => $i->actual_use,
+            'area_sqm' => (float) $i->area_sqm,
+            'unit_value' => (float) $i->unit_value,
+            'adjustment_factor_pct' => (float) $i->adjustment_factor_pct,
+            'assessment_level_pct' => (float) $i->assessment_level_pct,
+            'details' => $i->details ?? [],
+        ])->toArray();
+
+        $computed = $this->calculator->computeTotals(
+            $itemsArray,
+            $assessment->taxability_status === 'Taxable',
+            [
+                'barangay' => $application->barangay ?? '',
+                'annual_tax_increase_pct' => (float) ($assessment->annual_tax_increase_pct ?? 0),
+                'annual_tax_increase_enabled' => (bool) ($assessment->annual_tax_increase_enabled ?? false),
+                'effective_year' => $assessment->effective_year,
+            ]
+        );
+
+        $response = $assessment->toArray();
+        $response['valuation_summary'] = $computed['valuation_summary'] ?? null;
+        $response['tax_summary'] = $computed['tax_summary'] ?? null;
+        $response['annual_tax_increase'] = $computed['annual_tax_increase'] ?? null;
+
+        return response()->json($response);
     }
 
     /**
@@ -189,6 +258,8 @@ class AssessmentController extends Controller
             'exemption_reason' => ['nullable', 'string'],
             'effective_year' => ['nullable', 'integer'],
             'effective_quarter' => ['nullable', 'integer'],
+            'annual_tax_increase_pct' => ['nullable', 'numeric'],
+            'annual_tax_increase_enabled' => ['nullable', 'boolean'],
             'remarks' => ['nullable', 'string'],
             'items' => ['required', 'array'],
         ]);
@@ -288,5 +359,93 @@ class AssessmentController extends Controller
         $taxDeclaration = $this->workflow->authorize($assessment, $request->user());
 
         return response()->json($taxDeclaration);
+    }
+
+    /**
+     * Get all reassessments for an application/property.
+     */
+    public function reassessments(Application $application): JsonResponse
+    {
+        $reassessments = $application->reassessments()
+            ->with(['creator:id,full_name', 'approver:id,full_name'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        return response()->json($reassessments);
+    }
+
+    /**
+     * Preview reassessment price changes (increase or decrease).
+     */
+    public function previewReassessment(Request $request, Application $application): JsonResponse
+    {
+        $assessment = $application->assessment;
+        if (!$assessment) {
+            return response()->json(['message' => 'Assessment not found.'], 404);
+        }
+
+        $data = $request->validate([
+            'adjustment_pct' => ['required', 'numeric'],
+            'reassessment_type' => ['nullable', 'string'],
+            'effective_year' => ['nullable', 'integer'],
+            'effective_quarter' => ['nullable', 'integer'],
+        ]);
+
+        $preview = $this->workflow->previewReassessment($assessment, $data);
+
+        return response()->json($preview);
+    }
+
+    /**
+     * Create a new reassessment record for price changes (increase or decrease).
+     */
+    public function storeReassessment(Request $request, Application $application): JsonResponse
+    {
+        $assessment = $application->assessment;
+        if (!$assessment) {
+            return response()->json(['message' => 'Assessment not found.'], 404);
+        }
+
+        $data = $request->validate([
+            'adjustment_pct' => ['required', 'numeric'],
+            'reassessment_type' => ['required', 'string'], // Increase, Decrease, GeneralRevision, etc.
+            'reason' => ['required', 'string', 'max:500'],
+            'remarks' => ['nullable', 'string', 'max:1000'],
+            'effective_year' => ['nullable', 'integer'],
+            'effective_quarter' => ['nullable', 'integer'],
+            'adjustment_mode' => ['nullable', 'string'],
+        ]);
+
+        $reassessment = $this->workflow->createReassessment($assessment, $data, $request->user());
+
+        return response()->json($reassessment, 201);
+    }
+
+    /**
+     * Approve and apply a reassessment (Municipal Assessor).
+     */
+    public function approveReassessment(Request $request, Reassessment $reassessment): JsonResponse
+    {
+        $data = $request->validate([
+            'remarks' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $approved = $this->workflow->approveReassessment($reassessment, $request->user(), $data['remarks'] ?? null);
+
+        return response()->json($approved);
+    }
+
+    /**
+     * Reject a reassessment request (Municipal Assessor).
+     */
+    public function rejectReassessment(Request $request, Reassessment $reassessment): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        $rejected = $this->workflow->rejectReassessment($reassessment, $request->user(), $data['reason']);
+
+        return response()->json($rejected);
     }
 }

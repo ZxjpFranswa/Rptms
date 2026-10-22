@@ -85,4 +85,14 @@ class Application extends Model
     {
         return $this->hasOne(Assessment::class);
     }
+
+    public function landPhotos(): HasMany
+    {
+        return $this->hasMany(ApplicationLandPhoto::class)->orderByDesc('created_at');
+    }
+
+    public function reassessments(): HasMany
+    {
+        return $this->hasMany(Reassessment::class)->orderByDesc('created_at');
+    }
 }

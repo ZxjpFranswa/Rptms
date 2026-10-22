@@ -5,10 +5,13 @@ use App\Http\Controllers\Api\AssessmentController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\LandPhotoController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\TaxpayerController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('health', fn () => response()->json(['status' => 'ok', 'timestamp' => now()->toISOString()]));
 
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
@@ -49,6 +52,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('role:Assessment Clerk,Municipal Assessor');
     Route::post('assessments/calculate', [AssessmentController::class, 'calculate']);
     Route::get('assessments/smv', [AssessmentController::class, 'smvValues']);
+    Route::get('assessments/plants-schedule', [AssessmentController::class, 'plantsSchedule']);
+    Route::post('assessments/plants/lookup', [AssessmentController::class, 'lookupPlantValue']);
     Route::get('assessments/review-queue', [AssessmentController::class, 'reviewQueue'])
         ->middleware('role:Municipal Assessor');
 
@@ -65,6 +70,24 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('role:Municipal Assessor');
     Route::post('applications/{application}/assessment/authorize', [AssessmentController::class, 'authorizeAssessment'])
         ->middleware('role:Municipal Assessor');
+
+    // Reassessments for Price Changes (Increase or Decrease)
+    Route::get('applications/{application}/reassessments', [AssessmentController::class, 'reassessments']);
+    Route::post('applications/{application}/reassessments/preview', [AssessmentController::class, 'previewReassessment']);
+    Route::post('applications/{application}/reassessments', [AssessmentController::class, 'storeReassessment'])
+        ->middleware('role:Assessment Clerk,Municipal Assessor');
+    Route::post('reassessments/{reassessment}/approve', [AssessmentController::class, 'approveReassessment'])
+        ->middleware('role:Municipal Assessor');
+    Route::post('reassessments/{reassessment}/reject', [AssessmentController::class, 'rejectReassessment'])
+        ->middleware('role:Municipal Assessor');
+
+    // Land Photos (Pictures image of the land)
+    Route::get('applications/{application}/land-photos', [LandPhotoController::class, 'index']);
+    Route::post('applications/{application}/land-photos', [LandPhotoController::class, 'store'])
+        ->middleware('role:Assessment Clerk,Municipal Assessor');
+    Route::get('applications/{application}/land-photos/{photo}', [LandPhotoController::class, 'show']);
+    Route::delete('applications/{application}/land-photos/{photo}', [LandPhotoController::class, 'destroy'])
+        ->middleware('role:Assessment Clerk,Municipal Assessor');
 
     Route::post('applications/{application}/documents', [DocumentController::class, 'store'])
         ->middleware('role:Assessment Clerk');

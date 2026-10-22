@@ -26,6 +26,8 @@ class Assessment extends Model
         'exemption_reason',
         'effective_year',
         'effective_quarter',
+        'annual_tax_increase_pct',
+        'annual_tax_increase_enabled',
         'status',
         'remarks',
         'created_by',
@@ -43,6 +45,8 @@ class Assessment extends Model
             'total_assessed_value' => 'decimal:2',
             'effective_year' => 'integer',
             'effective_quarter' => 'integer',
+            'annual_tax_increase_pct' => 'decimal:2',
+            'annual_tax_increase_enabled' => 'boolean',
             'submitted_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'authorized_at' => 'datetime',
@@ -67,6 +71,11 @@ class Assessment extends Model
     public function statusHistories(): HasMany
     {
         return $this->hasMany(AssessmentStatusHistory::class);
+    }
+
+    public function reassessments(): HasMany
+    {
+        return $this->hasMany(Reassessment::class)->orderByDesc('created_at');
     }
 
     public function creator(): BelongsTo

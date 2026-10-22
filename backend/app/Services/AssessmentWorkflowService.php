@@ -7,6 +7,7 @@ use App\Models\Application;
 use App\Models\Assessment;
 use App\Models\AssessmentItem;
 use App\Models\AssessmentStatusHistory;
+use App\Models\Reassessment;
 use App\Models\TaxDeclaration;
 use App\Models\User;
 use Illuminate\Support\Arr;
@@ -34,8 +35,17 @@ class AssessmentWorkflowService
         return DB::transaction(function () use ($application, $payload, $user) {
             $isTaxable = (bool) Arr::get($payload, 'is_taxable', !$application->tax_exempt);
             $itemsData = Arr::get($payload, 'items', []);
+            $annualIncreasePct = (float) Arr::get($payload, 'annual_tax_increase_pct', 0.0);
+            $annualIncreaseEnabled = (bool) Arr::get($payload, 'annual_tax_increase_enabled', false);
+            $effectiveYear = (int) Arr::get($payload, 'effective_year', date('Y'));
+            $effectiveQuarter = (int) Arr::get($payload, 'effective_quarter', 1);
 
-            $computed = $this->calculator->computeTotals($itemsData, $isTaxable);
+            $computed = $this->calculator->computeTotals($itemsData, $isTaxable, [
+                'annual_tax_increase_pct' => $annualIncreasePct,
+                'annual_tax_increase_enabled' => $annualIncreaseEnabled,
+                'effective_year' => $effectiveYear,
+                'barangay' => $application->barangay ?? '',
+            ]);
 
             /** @var Assessment $assessment */
             $assessment = Assessment::updateOrCreate(
@@ -47,8 +57,10 @@ class AssessmentWorkflowService
                     'total_assessed_value' => $computed['total_assessed_value'],
                     'taxability_status' => $isTaxable ? 'Taxable' : 'Exempt',
                     'exemption_reason' => Arr::get($payload, 'exemption_reason', $application->exemption_notes),
-                    'effective_year' => (int) Arr::get($payload, 'effective_year', date('Y')),
-                    'effective_quarter' => (int) Arr::get($payload, 'effective_quarter', 1),
+                    'effective_year' => $effectiveYear,
+                    'effective_quarter' => $effectiveQuarter,
+                    'annual_tax_increase_pct' => $annualIncreasePct,
+                    'annual_tax_increase_enabled' => $annualIncreaseEnabled,
                     'status' => 'Draft',
                     'remarks' => Arr::get($payload, 'remarks', ''),
                     'created_by' => $user->id,
@@ -230,6 +242,171 @@ class AssessmentWorkflowService
             $this->recordHistory($assessment, $prevStatus, 'Authorized', $assessor, "Authorized Tax Declaration {$tdNumber}");
 
             return $td;
+        });
+    }
+
+    /**
+     * Preview the effect of a reassessment (price increase or decrease).
+     */
+    public function previewReassessment(Assessment $assessment, array $payload): array
+    {
+        $adjustmentPct = (float) Arr::get($payload, 'adjustment_pct', 0.0);
+        $type = Arr::get($payload, 'reassessment_type', $adjustmentPct >= 0 ? 'Increase' : 'Decrease');
+        $prevMv = (float) $assessment->total_market_value;
+        $prevAv = (float) $assessment->total_assessed_value;
+
+        $factor = 1 + ($adjustmentPct / 100.0);
+        $newMv = round($prevMv * $factor, 2);
+        $newAv = round($prevAv * $factor, 2);
+
+        $diffMv = round($newMv - $prevMv, 2);
+        $diffAv = round($newAv - $prevAv, 2);
+
+        $prevTax = round($prevAv * 0.02, 2);
+        $newTax = round($newAv * 0.02, 2);
+        $diffTax = round($newTax - $prevTax, 2);
+
+        return [
+            'reassessment_type' => $type,
+            'adjustment_pct' => $adjustmentPct,
+            'previous_market_value' => $prevMv,
+            'new_market_value' => $newMv,
+            'difference_market_value' => $diffMv,
+            'previous_assessed_value' => $prevAv,
+            'new_assessed_value' => $newAv,
+            'difference_assessed_value' => $diffAv,
+            'previous_annual_tax' => $prevTax,
+            'new_annual_tax' => $newTax,
+            'difference_annual_tax' => $diffTax,
+            'effective_year' => (int) Arr::get($payload, 'effective_year', date('Y')),
+            'effective_quarter' => (int) Arr::get($payload, 'effective_quarter', 1),
+        ];
+    }
+
+    /**
+     * Create a Reassessment request (Clerk or Assessor).
+     */
+    public function createReassessment(Assessment $assessment, array $payload, User $user): Reassessment
+    {
+        $preview = $this->previewReassessment($assessment, $payload);
+
+        return DB::transaction(function () use ($assessment, $payload, $preview, $user) {
+            $reassessment = Reassessment::create([
+                'assessment_id' => $assessment->id,
+                'application_id' => $assessment->application_id,
+                'reassessment_type' => Arr::get($payload, 'reassessment_type', $preview['reassessment_type']),
+                'adjustment_mode' => Arr::get($payload, 'adjustment_mode', 'percentage'),
+                'adjustment_pct' => $preview['adjustment_pct'],
+                'previous_market_value' => $preview['previous_market_value'],
+                'new_market_value' => $preview['new_market_value'],
+                'previous_assessed_value' => $preview['previous_assessed_value'],
+                'new_assessed_value' => $preview['new_assessed_value'],
+                'effective_year' => $preview['effective_year'],
+                'effective_quarter' => $preview['effective_quarter'],
+                'reason' => Arr::get($payload, 'reason', 'Schedule of Market Value price adjustment'),
+                'remarks' => Arr::get($payload, 'remarks'),
+                'status' => 'Pending',
+                'created_by' => $user->id,
+            ]);
+
+            $this->recordHistory(
+                $assessment,
+                $assessment->status,
+                $assessment->status,
+                $user,
+                "Reassessment requested: {$reassessment->reassessment_type} of {$reassessment->adjustment_pct}% ({$reassessment->reason})"
+            );
+
+            return $reassessment->fresh(['creator', 'approver', 'assessment']);
+        });
+    }
+
+    /**
+     * Approve and apply a Reassessment (Municipal Assessor).
+     */
+    public function approveReassessment(Reassessment $reassessment, User $assessor, ?string $remarks = null): Reassessment
+    {
+        if ($reassessment->status !== 'Pending') {
+            throw ValidationException::withMessages([
+                'status' => 'Only pending reassessments can be approved.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($reassessment, $assessor, $remarks) {
+            $assessment = $reassessment->assessment;
+            $factor = 1 + ($reassessment->adjustment_pct / 100.0);
+
+            // Scale assessment items proportionally
+            foreach ($assessment->items as $item) {
+                $item->unit_value = round((float) $item->unit_value * $factor, 2);
+                $item->base_market_value = round((float) $item->base_market_value * $factor, 2);
+                $item->market_value = round((float) $item->market_value * $factor, 2);
+                $item->assessed_value = round((float) $item->assessed_value * $factor, 2);
+                $item->save();
+            }
+
+            // Update assessment overall values
+            $assessment->total_market_value = $reassessment->new_market_value;
+            $assessment->total_assessed_value = $reassessment->new_assessed_value;
+            $assessment->effective_year = $reassessment->effective_year;
+            $assessment->effective_quarter = $reassessment->effective_quarter;
+            $assessment->save();
+
+            // If Tax Declaration exists, update its values
+            if ($assessment->taxDeclaration) {
+                $assessment->taxDeclaration->update([
+                    'total_market_value' => $reassessment->new_market_value,
+                    'total_assessed_value' => $reassessment->new_assessed_value,
+                ]);
+            }
+
+            $reassessment->update([
+                'status' => 'Approved',
+                'approved_by' => $assessor->id,
+                'approved_at' => now(),
+                'remarks' => $remarks ?: $reassessment->remarks,
+            ]);
+
+            $this->recordHistory(
+                $assessment,
+                $assessment->status,
+                $assessment->status,
+                $assessor,
+                "Reassessment approved & applied: {$reassessment->reassessment_type} of {$reassessment->adjustment_pct}%. MV updated to ₱" . number_format((float)$reassessment->new_market_value, 2)
+            );
+
+            return $reassessment->fresh(['creator', 'approver', 'assessment']);
+        });
+    }
+
+    /**
+     * Reject a Reassessment request (Municipal Assessor).
+     */
+    public function rejectReassessment(Reassessment $reassessment, User $assessor, string $reason): Reassessment
+    {
+        if ($reassessment->status !== 'Pending') {
+            throw ValidationException::withMessages([
+                'status' => 'Only pending reassessments can be rejected.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($reassessment, $assessor, $reason) {
+            $reassessment->update([
+                'status' => 'Rejected',
+                'approved_by' => $assessor->id,
+                'approved_at' => now(),
+                'remarks' => $reason,
+            ]);
+
+            $this->recordHistory(
+                $reassessment->assessment,
+                $reassessment->assessment->status,
+                $reassessment->assessment->status,
+                $assessor,
+                "Reassessment rejected: {$reason}"
+            );
+
+            return $reassessment->fresh(['creator', 'approver', 'assessment']);
         });
     }
 

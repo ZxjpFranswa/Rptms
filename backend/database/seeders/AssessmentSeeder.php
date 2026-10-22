@@ -65,6 +65,23 @@ class AssessmentSeeder extends Seeder
                     'adjustment_factor_pct' => -5,
                     'assessment_level_pct' => 40.00,
                 ];
+                $items[] = [
+                    'item_type' => 'Plants/Trees',
+                    'classification' => 'Agricultural',
+                    'actual_use' => 'Agricultural',
+                    'area_sqm' => 80,
+                    'unit_value' => 850.00,
+                    'adjustment_factor_pct' => 0,
+                    'assessment_level_pct' => 40.00,
+                    'details' => [
+                        'plant_kind' => 'Coconut',
+                        'age_years' => 15,
+                        'quantity_trees' => 80,
+                        'stage' => 'Productive / Peak Bearing',
+                        'age_bracket' => '7-30 yrs',
+                        'is_bearing' => true,
+                    ],
+                ];
             } elseif ($app->property_type === 'Commercial') {
                 $items[] = [
                     'item_type' => 'Land',
@@ -113,6 +130,8 @@ class AssessmentSeeder extends Seeder
                 'exemption_reason' => $app->exemption_notes,
                 'effective_year' => 2024,
                 'effective_quarter' => 1,
+                'annual_tax_increase_pct' => 3.0,
+                'annual_tax_increase_enabled' => true,
                 'items' => $items,
             ], $clerk);
 

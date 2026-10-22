@@ -13,6 +13,7 @@ class DocumentTypes
         'Deed of Sale',
         'Affidavit',
         'Exemption Document',
+        'Land Photo',
     ];
 
     public const REQUIRED = [
